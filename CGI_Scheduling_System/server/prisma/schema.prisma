@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model audit_logs {
+  id          Int       @id @default(autoincrement())
+  user_id     Int?
+  action      String    @db.VarChar(255)
+  entity_type String    @db.VarChar(100)
+  entity_id   Int?
+  old_value   Json?
+  new_value   Json?
+  timestamp   DateTime? @default(now()) @db.Timestamp(6)
+  users       users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+}
+
+model groups {
+  id          Int          @id @default(autoincrement())
+  name        String       @db.VarChar(255)
+  description String?
+  status      status_type? @default(active)
+  created_at  DateTime?    @default(now()) @db.Timestamp(6)
+  holidays    holidays[]
+  teams       teams[]
+}
+
+model holidays {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(255)
+  holiday_date DateTime @db.Date
+  group_id     Int?
+  groups       groups?  @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model leave_requests {
+  id                                      Int               @id @default(autoincrement())
+  user_id                                 Int?
+  start_date                              DateTime          @db.Date
+  end_date                                DateTime          @db.Date
+  absence_code                            absence_code_type
+  status                                  leave_status?     @default(pending)
+  approved_by                             Int?
+  users_leave_requests_approved_byTousers users?            @relation("leave_requests_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
+  users_leave_requests_user_idTousers     users?            @relation("leave_requests_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model locations {
+  id         Int          @id @default(autoincrement())
+  name       String       @db.VarChar(255)
+  address    String?
+  timezone   String?      @default("MST") @db.VarChar(50)
+  status     status_type? @default(active)
+  created_at DateTime?    @default(now()) @db.Timestamp(6)
+  rotations  rotations[]
+}
+
+model roles {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique @db.VarChar(100)
+  description String?
+  user_roles  user_roles[]
+}
+
+model rotation_assignments {
+  id          Int                @id @default(autoincrement())
+  rotation_id Int?
+  user_id     Int?
+  start_time  DateTime           @db.Timestamp(6)
+  end_time    DateTime           @db.Timestamp(6)
+  status_code String?            @db.VarChar(10)
+  slot        slot_type?         @default(full)
+  status      assignment_status? @default(scheduled)
+  rotations   rotations?         @relation(fields: [rotation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users?             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model rotation_types {
+  id                    Int           @id @default(autoincrement())
+  name                  String        @db.VarChar(255)
+  default_interval_unit interval_type
+  rotations             rotations[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rotations {
+  id                   Int                    @id @default(autoincrement())
+  name                 String                 @db.VarChar(255)
+  rotation_type_id     Int?
+  team_id              Int?
+  location_id          Int?
+  start_date           DateTime               @db.Date
+  interval_unit        interval_type
+  interval_count       Int?                   @default(1)
+  status               status_type?           @default(active)
+  rotation_assignments rotation_assignments[]
+  locations            locations?             @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  rotation_types       rotation_types?        @relation(fields: [rotation_type_id], references: [id], onUpdate: NoAction)
+  teams                teams?                 @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model teams {
+  id             Int          @id @default(autoincrement())
+  name           String       @db.VarChar(255)
+  group_id       Int?
+  parent_team_id Int?
+  status         status_type? @default(active)
+  rotations      rotations[]
+  groups         groups?      @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams          teams?       @relation("teamsToteams", fields: [parent_team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_teams    teams[]      @relation("teamsToteams")
+}
+
+model user_roles {
+  user_id Int
+  role_id Int
+  roles   roles @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+model users {
+  id                                               Int                    @id @default(autoincrement())
+  name                                             String                 @db.VarChar(255)
+  email                                            String                 @unique @db.VarChar(255)
+  password_hash                                    String                 @db.VarChar(255)
+  status                                           status_type?           @default(active)
+  created_at                                       DateTime?              @default(now()) @db.Timestamp(6)
+  audit_logs                                       audit_logs[]
+  leave_requests_leave_requests_approved_byTousers leave_requests[]       @relation("leave_requests_approved_byTousers")
+  leave_requests_leave_requests_user_idTousers     leave_requests[]       @relation("leave_requests_user_idTousers")
+  rotation_assignments                             rotation_assignments[]
+  user_roles                                       user_roles[]
+}
+
+enum absence_code_type {
+  v
+  a
+  mv
+  av
+  pv
+}
+
+enum assignment_status {
+  scheduled
+  overridden
+  cancelled
+}
+
+enum interval_type {
+  day
+  week
+  biweek
+  month
+}
+
+enum leave_status {
+  pending
+  approved
+  rejected
+}
+
+enum slot_type {
+  full
+  morning
+  afternoon
+}
+
+enum status_type {
+  active
+  inactive
+}
