@@ -1,29 +1,54 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from "react";
+import Login from "./components/Login";
+import UserRoles from "./components/UserRoles";
+import "./App.css";
 
 function App() {
-    const [message, setMessage] = useState('Loading...');
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const response = await fetch('http://localhost:5000/hello');
-                if (!response.ok) throw new Error('Network response was not ok');
-                const data = await response.text();
-                setMessage(data);
-            } catch (error) {
-                console.error("Fetch error:", error);
-                // We don't change the state to an error immediately so the
-                // successful first fetch doesn't get overwritten by a "double-run" error.
-            }
-        };
+    // Mock Data for Demo
+    const [users, setUsers] = useState([
+        { id: 1, username: "admin", firstName: "System", lastName: "Admin", email: "admin@cgi.com", role: "Administrator", status: "active", location: "Montreal", phone: "555-0101", created_at: new Date() },
+        { id: 2, username: "jdoe", firstName: "John", lastName: "Doe", email: "john.doe@cgi.com", role: "Employee", status: "active", location: "Toronto", phone: "555-0102", created_at: new Date() }
+    ]);
 
-        fetchData();
-    }, []);
+    const userRoles = ["Administrator", "Manager", "Employee"];
+
+    // Handlers
+    const handleLogin = (creds) => {
+        setIsLoggedIn(true);
+        return { ok: true };
+    };
+
+    const handleCreateUser = (newUser) => {
+        const userWithId = { ...newUser, id: Date.now(), created_at: new Date() };
+        setUsers([...users, userWithId]);
+        return { ok: true, user: userWithId };
+    };
+
+    const handleUpdateUser = (id, updatedData) => {
+        setUsers(users.map(u => u.id === id ? { ...u, ...updatedData } : u));
+        return { ok: true, user: { ...updatedData, id } };
+    };
+
+    const handleDeleteUser = (id) => {
+        setUsers(users.filter(u => u.id !== id));
+        return { ok: true };
+    };
 
     return (
-        <div style={{ textAlign: 'center', marginTop: '50px' }}>
-            <h1>{message}</h1>
-            <p>If you see the message above, your stack is connected!</p>
+        <div className="App">
+            {!isLoggedIn ? (
+                <Login onLogin={handleLogin} onRegister={() => ({ ok: true })} />
+            ) : (
+                <UserRoles
+                    users={users}
+                    userRoles={userRoles}
+                    onCreateUser={handleCreateUser}
+                    onUpdateUser={handleUpdateUser}
+                    onDeleteUser={handleDeleteUser}
+                />
+            )}
         </div>
     );
 }

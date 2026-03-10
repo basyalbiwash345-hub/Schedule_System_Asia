@@ -1,10 +1,20 @@
 const { PrismaClient } = require('@prisma/client');
 
-/**
- * Prisma Client is the replacement for the manual 'pg' Pool.
- * It uses the DATABASE_URL from your .env file via prisma.config.ts
- * to manage all 12 of your database models (teams, users, etc.).
- */
-const prisma = new PrismaClient();
+let prisma;
+
+try {
+    prisma = new PrismaClient({
+        datasources: {
+            db: {
+                url: process.env.DATABASE_URL,
+            },
+        },
+    });
+    console.log("💎 Prisma Client successfully initialized!");
+} catch (error) {
+    console.error("Prisma failed to initialize:", error.message);
+    // We keep it as a blank object so the server doesn't crash on boot
+    prisma = {};
+}
 
 module.exports = prisma;
