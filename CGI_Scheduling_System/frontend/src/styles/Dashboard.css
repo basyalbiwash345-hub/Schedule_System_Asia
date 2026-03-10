@@ -167,3 +167,106 @@
     font-size: 0.75rem;
     font-weight: 600;
 }
+
+/* Header Specific Layout */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    height: 70px;
+}
+
+.header-left { display: flex; align-items: center; gap: 2.5rem; }
+
+/* CSS Logo Styling */
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.cgi-badge {
+    background-color: #e31937;
+    color: white;
+    padding: 4px 10px;
+    font-weight: 900;
+    font-size: 1.1rem;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.logo-text { display: flex; flexDirection: column; }
+.logo-title { display: block; font-weight: 700; color: #111827; font-size: 0.95rem; }
+.logo-subtitle { display: block; font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Navigation Buttons */
+.header-nav { display: flex; gap: 4px; }
+.nav-btn {
+    background: none;
+    border: none;
+    padding: 8px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover { color: #111827; background: #f3f4f6; }
+.nav-btn.active { color: #e31937; background: #fee2e2; }
+
+/* Search Bar */
+.header-center { flex: 1; max-width: 450px; }
+.search-input {
+    width: 100%;
+    padding: 10px 16px;
+    background: #f3f4f6;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.search-input:focus {
+    background: white;
+    border-color: #e31937;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(227, 25, 55, 0.1);
+}
+
+/* User Pill */
+.user-pill {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 14px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 50px;
+}
+
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-admin { background: #e31937; box-shadow: 0 0 6px rgba(227, 25, 55, 0.5); }
+.status-member { background: #10b981; }
+
+.user-info { text-align: left; }
+.user-name { font-size: 0.85rem; font-weight: 700; color: #111827; line-height: 1.1; }
+.user-role { font-size: 0.7rem; color: #6b7280; }
+
+.logout-btn {
+    border: none;
+    background: none;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding-left: 10px;
+    border-left: 1px solid #e5e7eb;
+}
+
+.logout-btn:hover { color: #e31937; }

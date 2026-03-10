@@ -1,32 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
+import Header from './components/Header';
 import './styles/Dashboard.css';
 
 function App() {
     const [users, setUsers] = useState([]);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [currentUser, setCurrentUser] = useState(null);
+    const [activePage, setActivePage] = useState("Users");
     const [formData, setFormData] = useState({ username: '', email: '', password: '' });
 
+    // 1. Fetch Users from Database
     useEffect(() => {
-        if (isLoggedIn) fetchUsers();
-    }, [isLoggedIn]);
+        if (isLoggedIn && activePage === "Users") {
+            fetchUsers();
+        }
+    }, [isLoggedIn, activePage]);
 
     const fetchUsers = async () => {
         try {
             const response = await fetch('/api/users');
             const data = await response.json();
             setUsers(data);
-        } catch (err) { console.error("Fetch failed", err); }
+        } catch (err) {
+            console.error("Fetch Error:", err);
+        }
     };
 
+    // 2. Admin Login Logic (Creates the user object for the Header)
     const handleAdminLogin = ({ identifier, password }) => {
         if (identifier === "admin@cgi.com" && password === "AdminAdmin902") {
+            const adminData = {
+                name: "CGI Administrator",
+                role: "Admin",
+                email: identifier
+            };
+            setCurrentUser(adminData);
             setIsLoggedIn(true);
             return { ok: true };
         }
-        return { ok: false, error: "Access Denied: Admin Credentials Required." };
+        return { ok: false, error: "Access Denied: Use Admin Credentials." };
     };
 
+    // 3. Create User & Save to PostgreSQL
     const handleCreateUser = async (e) => {
         e.preventDefault();
         try {
@@ -40,77 +56,98 @@ function App() {
                 const savedUser = await response.json();
                 setUsers((prev) => [...prev, savedUser]);
                 setFormData({ username: '', email: '', password: '' });
-                alert("✅ Success: PostgreSQL Synchronized.");
+                alert("✅ Success: Employee synchronized with PostgreSQL.");
             }
-        } catch (err) { console.error("Database Error:", err); }
+        } catch (err) {
+            console.error("Database Error:", err);
+        }
     };
 
-    if (!isLoggedIn) {
-        return <Login onLogin={handleAdminLogin} onRegister={() => ({ ok: false, error: "Access Restricted." })} />;
-    }
-
-    return (
-        <div className="dashboard-wrapper">
-            <aside className="sidebar">
-                <div className="brand-logo">CGI <span>Schedule</span></div>
-                <nav className="nav-menu">
-                    <div className="nav-item active">User Directory</div>
-                    <div className="nav-item">Team Rotations</div>
-                    <div className="nav-item">System Logs</div>
-                </nav>
-                <button className="nav-item" onClick={() => setIsLoggedIn(false)} style={{background: 'none', border: 'none', textAlign: 'left', width: '100%'}}>
-                    Sign Out
-                </button>
-            </aside>
-
-            <main className="main-content">
-                <header className="page-header">
-                    <h1>Identity Management</h1>
-                    <p>Synchronize employee records with the primary PostgreSQL database.</p>
-                </header>
-
+    // 4. Page Content Switcher
+    const renderPageContent = () => {
+        if (activePage === "Users") {
+            return (
                 <div className="grid-container">
                     <div className="enterprise-card">
-                        <h3>Provision New Account</h3>
+                        <h3>Provision New Identity</h3>
                         <form onSubmit={handleCreateUser}>
-                            <div className="form-group">
-                                <label>Full Name</label>
-                                <input className="enterprise-input" placeholder="Alex Johnson" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Corporate Email</label>
-                                <input className="enterprise-input" type="email" placeholder="alex.j@cgi.com" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Initial Password</label>
-                                <input className="enterprise-input" type="password" placeholder="••••••••" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
-                            </div>
-                            <button type="submit" className="btn-primary">Sync Record</button>
+                            <input
+                                className="enterprise-input"
+                                placeholder="Full Legal Name"
+                                value={formData.username}
+                                onChange={(e) => setFormData({...formData, username: e.target.value})}
+                                required
+                            />
+                            <input
+                                className="enterprise-input"
+                                type="email"
+                                placeholder="Corporate Email"
+                                value={formData.email}
+                                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                required
+                            />
+                            <input
+                                className="enterprise-input"
+                                type="password"
+                                placeholder="Initial Password"
+                                value={formData.password}
+                                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                                required
+                            />
+                            <button type="submit" className="btn-primary">Sync to Database</button>
                         </form>
                     </div>
 
-                    <div className="enterprise-card">
-                        <h3>Active Directory Sync</h3>
+                    <div className="enterprise-card" style={{ padding: 0, overflow: 'hidden' }}>
                         <table className="data-table">
                             <thead>
                             <tr>
-                                <th>Employee</th>
-                                <th>Email</th>
+                                <th>Identity</th>
+                                <th>System Email</th>
                                 <th>Status</th>
                             </tr>
                             </thead>
                             <tbody>
                             {users.map(u => (
                                 <tr key={u.id}>
-                                    <td><strong>{u.name}</strong></td>
+                                    <td><span style={{fontWeight: 600}}>{u.name}</span></td>
                                     <td>{u.email}</td>
-                                    <td><span className="status-badge">Synchronized</span></td>
+                                    <td><span className="status-badge">Active</span></td>
                                 </tr>
                             ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
+            );
+        }
+        return (
+            <div className="enterprise-card" style={{ textAlign: 'center', padding: '100px' }}>
+                <h2>{activePage} Module</h2>
+                <p>This module is currently under development for Iteration 2.</p>
+            </div>
+        );
+    };
+
+    if (!isLoggedIn) return <Login onLogin={handleAdminLogin} />;
+
+    return (
+        <div className="dashboard-root">
+            <Header
+                user={currentUser}
+                activePage={activePage}
+                onNavigate={setActivePage}
+                onLogout={() => {
+                    setIsLoggedIn(false);
+                    setCurrentUser(null);
+                }}
+            />
+            <main className="main-content">
+                <header className="page-header">
+                    <h1>{activePage} Management</h1>
+                    <p>Enterprise system control for PostgreSQL (Instance: asia1)</p>
+                </header>
+                {renderPageContent()}
             </main>
         </div>
     );
