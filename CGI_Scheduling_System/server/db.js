@@ -1,20 +1,17 @@
 const { PrismaClient } = require('@prisma/client');
 
-let prisma;
+// Initialize Prisma
+const prisma = new PrismaClient();
 
-try {
-    prisma = new PrismaClient({
-        datasources: {
-            db: {
-                url: process.env.DATABASE_URL,
-            },
-        },
-    });
-    console.log("💎 Prisma Client successfully initialized!");
-} catch (error) {
-    console.error("Prisma failed to initialize:", error.message);
-    // We keep it as a blank object so the server doesn't crash on boot
-    prisma = {};
+async function checkDb() {
+    try {
+        await prisma.$connect();
+        console.log("💎 Prisma 6 successfully connected to 'asia1'.");
+    } catch (e) {
+        console.error("❌ Prisma Connection Failed:", e.message);
+    }
 }
+
+checkDb();
 
 module.exports = prisma;
