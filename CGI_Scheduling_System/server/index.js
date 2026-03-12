@@ -11,6 +11,7 @@ app.use(express.json());
 const ALLOWED_INTERVAL_UNITS = new Set(['day', 'week', 'biweek', 'month']);
 const ALLOWED_STATUS = new Set(['active', 'inactive']);
 
+// --- HELPER PARSERS ---
 const parseOptionalInt = (value) => {
     if (value === undefined || value === null || value === '') return null;
     const parsed = Number.parseInt(value, 10);
@@ -64,151 +65,133 @@ const validateRotationPayload = (payload) => {
     };
 };
 
-// 1. FETCH ALL USERS (PERSISTENT)
+// --- API ROUTES ---
+
+// 1. USERS
 app.get('/api/users', async (req, res) => {
     try {
-        const users = await prisma.users.findMany({
-            orderBy: { id: 'asc' }
-        });
-        res.json(users);
+        const users = await prisma.users.findMany({ orderBy: { id: 'asc' } });
+        res.json(Array.isArray(users) ? users : []);
     } catch (err) {
-        console.error("Fetch Error:", err.message);
-        res.status(500).json({ error: "Failed to load users from PostgreSQL." });
+        res.status(500).json([]);
     }
 });
 
-// 2. CREATE NEW USER (SAVES TO DATABASE)
 app.post('/api/users', async (req, res) => {
     const { username, email, password } = req.body;
     try {
         const newUser = await prisma.users.create({
-            data: {
-                name: username, // Maps your form's 'username' to the 'name' column
-                email: email,
-                password_hash: password,
-                status: 'active'
-            }
+            data: { name: username, email, password_hash: password, status: 'active' }
         });
-        console.log(`✅ User ${newUser.name} saved to database.`);
         res.status(201).json(newUser);
     } catch (err) {
-        console.error("SQL Error:", err.message);
-        res.status(500).json({ error: "DB Error: " + err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ROTATION SUPPORTING DATA
-app.get('/api/rotation-types', async (req, res) => {
-    try {
-        const rotationTypes = await prisma.rotation_types.findMany({
-            orderBy: { name: 'asc' }
-        });
-        res.json(rotationTypes);
-    } catch (err) {
-        console.error("Rotation Types Fetch Error:", err.message);
-        res.status(500).json({ error: "Failed to load rotation types." });
-    }
-});
-
+// 2. TEAMS (Full CRUD Implementation)
 app.get('/api/teams', async (req, res) => {
     try {
         const teams = await prisma.teams.findMany({
-            orderBy: { name: 'asc' }
+            orderBy: { name: 'asc' },
+            include: { users: true } // Includes lead info if relation is set
         });
-        res.json(teams);
+        res.json(Array.isArray(teams) ? teams : []);
     } catch (err) {
-        console.error("Teams Fetch Error:", err.message);
-        res.status(500).json({ error: "Failed to load teams." });
+        res.json([]);
     }
+});
+
+app.post('/api/teams', async (req, res) => {
+    try {
+        const { name, color, leadId, description, role } = req.body;
+        const team = await prisma.teams.create({
+            data: {
+                name,
+                color,
+                lead_id: parseOptionalInt(leadId),
+                description,
+                role
+            }
+        });
+        res.status(201).json(team);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/teams/:id', async (req, res) => {
+    const teamId = parseOptionalInt(req.params.id);
+    const { name, color, leadId, description, role } = req.body;
+    try {
+        const updatedTeam = await prisma.teams.update({
+            where: { id: teamId },
+            data: {
+                name,
+                color,
+                lead_id: parseOptionalInt(leadId),
+                description,
+                role
+            }
+        });
+        res.json(updatedTeam);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update team." });
+    }
+});
+
+app.delete('/api/teams/:id', async (req, res) => {
+    const teamId = parseOptionalInt(req.params.id);
+    try {
+        await prisma.teams.delete({ where: { id: teamId } });
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to delete team." });
+    }
+});
+
+// 3. ROTATIONS & METADATA
+app.get('/api/rotation-types', async (req, res) => {
+    try {
+        const types = await prisma.rotation_types.findMany({ orderBy: { name: 'asc' } });
+        res.json(types);
+    } catch (err) { res.status(500).json([]); }
 });
 
 app.get('/api/locations', async (req, res) => {
     try {
-        const locations = await prisma.locations.findMany({
-            orderBy: { name: 'asc' }
-        });
-        res.json(locations);
-    } catch (err) {
-        console.error("Locations Fetch Error:", err.message);
-        res.status(500).json({ error: "Failed to load locations." });
-    }
+        const locs = await prisma.locations.findMany({ orderBy: { name: 'asc' } });
+        res.json(locs);
+    } catch (err) { res.status(500).json([]); }
 });
 
-// ROTATIONS CRUD
 app.get('/api/rotations', async (req, res) => {
     try {
         const rotations = await prisma.rotations.findMany({
-            orderBy: { id: 'asc' },
-            include: {
-                rotation_types: true,
-                teams: true,
-                locations: true
-            }
+            include: { rotation_types: true, teams: true, locations: true },
+            orderBy: { id: 'asc' }
         });
-        res.json(rotations);
-    } catch (err) {
-        console.error("Rotations Fetch Error:", err.message);
-        res.status(500).json({ error: "Failed to load rotations." });
-    }
+        res.json(Array.isArray(rotations) ? rotations : []);
+    } catch (err) { res.status(500).json([]); }
 });
 
 app.post('/api/rotations', async (req, res) => {
     const { errors, data } = validateRotationPayload(req.body);
-    if (errors.length) {
-        return res.status(400).json({ error: errors.join(' ') });
-    }
-
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
     try {
-        const rotation = await prisma.rotations.create({
-            data
-        });
+        const rotation = await prisma.rotations.create({ data });
         res.status(201).json(rotation);
-    } catch (err) {
-        console.error("Rotation Create Error:", err.message);
-        res.status(500).json({ error: "Failed to create rotation." });
-    }
-});
-
-app.put('/api/rotations/:id', async (req, res) => {
-    const rotationId = Number.parseInt(req.params.id, 10);
-    if (Number.isNaN(rotationId)) {
-        return res.status(400).json({ error: "Invalid rotation id." });
-    }
-
-    const { errors, data } = validateRotationPayload(req.body);
-    if (errors.length) {
-        return res.status(400).json({ error: errors.join(' ') });
-    }
-
-    try {
-        const rotation = await prisma.rotations.update({
-            where: { id: rotationId },
-            data
-        });
-        res.json(rotation);
-    } catch (err) {
-        console.error("Rotation Update Error:", err.message);
-        res.status(500).json({ error: "Failed to update rotation." });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/rotations/:id', async (req, res) => {
-    const rotationId = Number.parseInt(req.params.id, 10);
-    if (Number.isNaN(rotationId)) {
-        return res.status(400).json({ error: "Invalid rotation id." });
-    }
-
+    const rotationId = parseOptionalInt(req.params.id);
     try {
-        await prisma.rotations.delete({
-            where: { id: rotationId }
-        });
+        await prisma.rotations.delete({ where: { id: rotationId } });
         res.json({ ok: true });
     } catch (err) {
-        console.error("Rotation Delete Error:", err.message);
         res.status(500).json({ error: "Failed to delete rotation." });
     }
 });
 
-app.listen(port, () => {
-    console.log(` Prisma 6 Server live on http://localhost:${port}`);
-});
+app.listen(port, () => console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`));
