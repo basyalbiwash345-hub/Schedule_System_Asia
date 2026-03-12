@@ -44,6 +44,13 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                             </button>
                             <button
                                 type="button"
+                                className={`nav-btn ${activePage === "Rotations" ? "active" : ""}`}
+                                onClick={() => onNavigate("Rotations")}
+                            >
+                                Rotations
+                            </button>
+                            <button
+                                type="button"
                                 className={`nav-btn ${activePage === "Roles" ? "active" : ""}`}
                                 onClick={() => onNavigate("Roles")}
                             >
