@@ -1,63 +1,75 @@
-var express = require(&#39;express&#39;);
+var express = require('express');
 var router = express.Router();
-const { PrismaClient } = require(&#39;@prisma/client&#39;);
+const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// GET /api/teams - List all teams
-router.get(&#39;/&#39;, async function(req, res, next) {
+// GET /api/teams
+router.get('/', async function(req, res) {
   try {
     const teams = await prisma.teams.findMany({
       include: {
         lead: true,
-        _count: {
-          select: { rotations: true }
-        }
+        _count: { select: { rotations: true } }
       },
-      orderBy: { id: &#39;desc&#39; }
+      orderBy: { id: 'desc' }
     });
     res.json(teams);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: &#39;Failed to fetch teams&#39; });
+    res.status(500).json({ error: 'Failed to fetch teams' });
   }
 });
 
-// POST /api/teams - Create new team
-router.post(&#39;/&#39;, async function(req, res, next) {
+// POST /api/teams
+router.post('/', async function(req, res) {
   try {
-    const { name, color, lead_id, members, team_role, description, group_id } = req.body;
+    const { name, color, leadId, members, role, description } = req.body;
     const team = await prisma.teams.create({
       data: {
         name,
         color,
-        lead_id: parseInt(lead_id) || null,
-        members: members ? JSON.parse(members) : null,
-        team_role,
-        description,
-        group_id: parseInt(group_id) || null,
+        lead_id: parseInt(leadId) || null,
+        members: members ? JSON.stringify(members) : null,
+        team_role: role,
+        description
       },
       include: { lead: true }
     });
     res.status(201).json(team);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: &#39;Failed to create team&#39; });
+    res.status(500).json({ error: 'Failed to create team' });
   }
 });
 
-// DELETE /api/teams/:id - Delete team
-router.delete(&#39;/:id&#39;, async function(req, res, next) {
+// PUT /api/teams/:id
+router.put('/:id', async function(req, res) {
   try {
-    const { id } = req.params;
-    await prisma.teams.delete({
-      where: { id: parseInt(id) }
+    const { name, color, leadId, members, role, description } = req.body;
+    const team = await prisma.teams.update({
+      where: { id: parseInt(req.params.id) },
+      data: {
+        name,
+        color,
+        lead_id: parseInt(leadId) || null,
+        members: members ? JSON.stringify(members) : null,
+        team_role: role,
+        description
+      },
+      include: { lead: true }
     });
-    res.json({ message: &#39;Team deleted successfully&#39; });
+    res.json(team);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: &#39;Failed to delete team&#39; });
+    res.status(500).json({ error: 'Failed to update team' });
+  }
+});
+
+// DELETE /api/teams/:id
+router.delete('/:id', async function(req, res) {
+  try {
+    await prisma.teams.delete({ where: { id: parseInt(req.params.id) } });
+    res.json({ message: 'Team deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete team' });
   }
 });
 
 module.exports = router;
-

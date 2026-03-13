@@ -11,7 +11,6 @@ app.use(express.json());
 const ALLOWED_INTERVAL_UNITS = new Set(['day', 'week', 'biweek', 'month']);
 const ALLOWED_STATUS = new Set(['active', 'inactive']);
 
-// --- HELPER PARSERS ---
 const parseOptionalInt = (value) => {
     if (value === undefined || value === null || value === '') return null;
     const parsed = Number.parseInt(value, 10);
@@ -33,8 +32,7 @@ const validateRotationPayload = (payload) => {
     const startDate = parseRequiredDate(payload.start_date);
     const intervalUnit = payload.interval_unit;
     const intervalCount = payload.interval_count === undefined || payload.interval_count === null || payload.interval_count === ''
-        ? 1
-        : Number.parseInt(payload.interval_count, 10);
+        ? 1 : Number.parseInt(payload.interval_count, 10);
     const status = payload.status || 'active';
 
     if (!name) errors.push('Rotation name is required.');
@@ -46,35 +44,20 @@ const validateRotationPayload = (payload) => {
 
     const hasTeam = teamId !== null;
     const hasLocation = locationId !== null;
-    if (hasTeam === hasLocation) {
-        errors.push('Rotation must be scoped to either a team or a location (not both).');
-    }
+    if (hasTeam === hasLocation) errors.push('Rotation must be scoped to either a team or a location (not both).');
 
     return {
         errors,
-        data: {
-            name,
-            rotation_type_id: rotationTypeId,
-            team_id: teamId,
-            location_id: locationId,
-            start_date: startDate,
-            interval_unit: intervalUnit,
-            interval_count: intervalCount,
-            status
-        }
+        data: { name, rotation_type_id: rotationTypeId, team_id: teamId, location_id: locationId, start_date: startDate, interval_unit: intervalUnit, interval_count: intervalCount, status }
     };
 };
 
-// --- API ROUTES ---
-
-// 1. USERS
+// --- USERS ---
 app.get('/api/users', async (req, res) => {
     try {
         const users = await prisma.users.findMany({ orderBy: { id: 'asc' } });
         res.json(Array.isArray(users) ? users : []);
-    } catch (err) {
-        res.status(500).json([]);
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/users', async (req, res) => {
@@ -84,45 +67,59 @@ app.post('/api/users', async (req, res) => {
             data: { name: username, email, password_hash: password, status: 'active' }
         });
         res.status(201).json(newUser);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. TEAMS (Full CRUD Implementation)
+app.put('/api/users/:id', async (req, res) => {
+    const { username, email } = req.body;
+    try {
+        const updatedUser = await prisma.users.update({
+            where: { id: parseInt(req.params.id) },
+            data: { name: username, email }
+        });
+        res.json(updatedUser);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        await prisma.users.delete({ where: { id: parseInt(req.params.id) } });
+        res.json({ message: 'User deleted successfully' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- TEAMS ---
 app.get('/api/teams', async (req, res) => {
     try {
         const teams = await prisma.teams.findMany({
             orderBy: { name: 'asc' },
-            include: { users: true } // Includes lead info if relation is set
+            include: { lead: true }
         });
         res.json(Array.isArray(teams) ? teams : []);
-    } catch (err) {
-        res.json([]);
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/teams', async (req, res) => {
     try {
-        const { name, color, leadId, description, role } = req.body;
+        const { name, color, leadId, description, role, members } = req.body;
         const team = await prisma.teams.create({
             data: {
                 name,
                 color,
                 lead_id: parseOptionalInt(leadId),
                 description,
-                role
-            }
+                team_role: role,
+                members: members ? JSON.stringify(members) : null
+            },
+            include: { lead: true }
         });
         res.status(201).json(team);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/teams/:id', async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
-    const { name, color, leadId, description, role } = req.body;
+    const { name, color, leadId, description, role, members } = req.body;
     try {
         const updatedTeam = await prisma.teams.update({
             where: { id: teamId },
@@ -131,38 +128,36 @@ app.put('/api/teams/:id', async (req, res) => {
                 color,
                 lead_id: parseOptionalInt(leadId),
                 description,
-                role
-            }
+                team_role: role,
+                members: members ? JSON.stringify(members) : null
+            },
+            include: { lead: true }
         });
         res.json(updatedTeam);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update team." });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/teams/:id', async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
     try {
         await prisma.teams.delete({ where: { id: teamId } });
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to delete team." });
-    }
+        res.json({ message: 'Team deleted successfully' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 3. ROTATIONS & METADATA
+// --- ROTATIONS & METADATA ---
 app.get('/api/rotation-types', async (req, res) => {
     try {
         const types = await prisma.rotation_types.findMany({ orderBy: { name: 'asc' } });
         res.json(types);
-    } catch (err) { res.status(500).json([]); }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/locations', async (req, res) => {
     try {
         const locs = await prisma.locations.findMany({ orderBy: { name: 'asc' } });
         res.json(locs);
-    } catch (err) { res.status(500).json([]); }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/rotations', async (req, res) => {
@@ -172,7 +167,7 @@ app.get('/api/rotations', async (req, res) => {
             orderBy: { id: 'asc' }
         });
         res.json(Array.isArray(rotations) ? rotations : []);
-    } catch (err) { res.status(500).json([]); }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/rotations', async (req, res) => {
@@ -184,14 +179,24 @@ app.post('/api/rotations', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.put('/api/rotations/:id', async (req, res) => {
+    const { errors, data } = validateRotationPayload(req.body);
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+    try {
+        const rotation = await prisma.rotations.update({
+            where: { id: parseInt(req.params.id) },
+            data
+        });
+        res.json(rotation);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/rotations/:id', async (req, res) => {
     const rotationId = parseOptionalInt(req.params.id);
     try {
         await prisma.rotations.delete({ where: { id: rotationId } });
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to delete rotation." });
-    }
+        res.json({ message: 'Rotation deleted successfully' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(port, () => console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`));

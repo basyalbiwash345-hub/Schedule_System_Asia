@@ -10,16 +10,12 @@ const DEFAULT_ROTATION_FORM = {
 };
 
 const DEFAULT_TEAM_FORM = {
-    name: '',
-    color: '#e31937',
-    leadId: '',
-    members: '',
-    role: 'Member',
-    description: ''
+    name: '', color: '#e31937', leadId: '', members: '', role: 'Member', description: ''
 };
 
+const DEFAULT_USER_FORM = { username: '', email: '', password: '' };
+
 function App() {
-    // --- STATE ---
     const [users, setUsers] = useState([]);
     const [teams, setTeams] = useState([]);
     const [rotations, setRotations] = useState([]);
@@ -30,20 +26,23 @@ function App() {
     const [currentUser, setCurrentUser] = useState(null);
     const [activePage, setActivePage] = useState("Users");
     const [selectedTeam, setSelectedTeam] = useState(null);
-    const [formData, setFormData] = useState({ username: '', email: '', password: '' });
 
+    // User state
+    const [formData, setFormData] = useState(DEFAULT_USER_FORM);
+    const [editingUser, setEditingUser] = useState(null);
+
+    // Team state
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
     const [showEditTeamModal, setShowEditTeamModal] = useState(false);
     const [editingTeam, setEditingTeam] = useState(null);
     const [teamFormData, setTeamFormData] = useState(DEFAULT_TEAM_FORM);
 
+    // Rotation state
     const [rotationFormData, setRotationFormData] = useState(DEFAULT_ROTATION_FORM);
     const [rotationScope, setRotationScope] = useState('team');
+    const [editingRotation, setEditingRotation] = useState(null);
 
-    // --- EFFECTS ---
-    useEffect(() => {
-        closeTeamModal();
-    }, [activePage]);
+    useEffect(() => { closeTeamModal(); }, [activePage]);
 
     useEffect(() => {
         if (isLoggedIn) {
@@ -83,13 +82,16 @@ function App() {
 
     const fetchRotationMetadata = async () => {
         try {
-            const [tRes, lRes] = await Promise.all([fetch('/api/rotation-types'), fetch('/api/locations')]);
+            const [tRes, lRes] = await Promise.all([
+                fetch('/api/rotation-types'),
+                fetch('/api/locations')
+            ]);
             setRotationTypes(await tRes.json());
             setLocations(await lRes.json());
         } catch (err) { console.error(err); }
     };
 
-    // --- HANDLERS ---
+    // --- AUTH ---
     const handleAdminLogin = ({ identifier, password }) => {
         if (identifier === "admin@cgi.com" && password === "AdminAdmin902") {
             setCurrentUser({ name: "CGI Administrator", role: "Admin", email: identifier });
@@ -99,6 +101,7 @@ function App() {
         return { ok: false, error: "Access Denied." };
     };
 
+    // --- USER HANDLERS ---
     const handleCreateUser = async (e) => {
         e.preventDefault();
         const res = await fetch("/api/users", {
@@ -106,43 +109,67 @@ function App() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(formData),
         });
-        if (res.ok) { fetchUsers(); setFormData({ username: '', email: '', password: '' }); }
+        if (res.ok) { fetchUsers(); setFormData(DEFAULT_USER_FORM); }
     };
 
-    // restored Team Logic from teammate's commit
+    const handleUpdateUser = async (e) => {
+        e.preventDefault();
+        const res = await fetch(`/api/users/${editingUser.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData),
+        });
+        if (res.ok) { fetchUsers(); setEditingUser(null); setFormData(DEFAULT_USER_FORM); }
+    };
+
+    const handleDeleteUser = async (id) => {
+        if (!window.confirm('Delete this user?')) return;
+        const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+        if (res.ok) fetchUsers();
+    };
+
+    const openEditUser = (user) => {
+        setEditingUser(user);
+        setFormData({ username: user.name, email: user.email, password: '' });
+    };
+
+    // --- TEAM HANDLERS ---
     const handleTeamFieldChange = (field, value) => setTeamFormData(prev => ({ ...prev, [field]: value }));
-
     const openCreateTeam = () => { setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); };
-
     const openEditTeam = (team) => {
-        setTeamFormData({ ...team, leadId: team.leadId || '' });
+        setTeamFormData({
+            name: team.name,
+            color: team.color || '#e31937',
+            leadId: team.lead_id || '',
+            members: team.members || '',
+            role: team.team_role || 'Member',
+            description: team.description || ''
+        });
         setEditingTeam(team);
         setShowEditTeamModal(true);
     };
 
     const handleSaveTeam = async (e) => {
         e.preventDefault();
-        // Prepare data exactly like your teammate's logic
-        const payload = {
-            ...teamFormData,
-            leadName: users.find(u => u.id == teamFormData.leadId)?.name || 'Unknown',
-            membersList: teamFormData.members.split(',').map(m => m.trim()).filter(Boolean)
-        };
-
         const method = editingTeam ? "PUT" : "POST";
         const url = editingTeam ? `/api/teams/${editingTeam.id}` : "/api/teams";
-
         const res = await fetch(url, {
-            method: method,
+            method,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(teamFormData),
         });
-
         if (res.ok) { fetchTeams(); closeTeamModal(); }
+    };
+
+    const handleDeleteTeam = async (id) => {
+        if (!window.confirm('Delete this team?')) return;
+        const res = await fetch(`/api/teams/${id}`, { method: "DELETE" });
+        if (res.ok) fetchTeams();
     };
 
     const closeTeamModal = () => { setShowCreateTeamModal(false); setShowEditTeamModal(false); setEditingTeam(null); };
 
+    // --- ROTATION HANDLERS ---
     const handleSaveRotation = async (e) => {
         e.preventDefault();
         const payload = {
@@ -150,12 +177,40 @@ function App() {
             team_id: rotationScope === 'team' ? rotationFormData.team_id : null,
             location_id: rotationScope === 'location' ? rotationFormData.location_id : null
         };
-        const res = await fetch('/api/rotations', {
-            method: 'POST',
+        const method = editingRotation ? "PUT" : "POST";
+        const url = editingRotation ? `/api/rotations/${editingRotation.id}` : "/api/rotations";
+        const res = await fetch(url, {
+            method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
-        if (res.ok) { fetchRotations(); setRotationFormData(DEFAULT_ROTATION_FORM); alert("Rotation Saved."); }
+        if (res.ok) {
+            fetchRotations();
+            setRotationFormData(DEFAULT_ROTATION_FORM);
+            setEditingRotation(null);
+            alert(editingRotation ? "Rotation Updated." : "Rotation Saved.");
+        }
+    };
+
+    const handleDeleteRotation = async (id) => {
+        if (!window.confirm('Delete this rotation?')) return;
+        const res = await fetch(`/api/rotations/${id}`, { method: "DELETE" });
+        if (res.ok) fetchRotations();
+    };
+
+    const openEditRotation = (rotation) => {
+        setEditingRotation(rotation);
+        setRotationScope(rotation.team_id ? 'team' : 'location');
+        setRotationFormData({
+            name: rotation.name,
+            rotation_type_id: rotation.rotation_type_id || '',
+            team_id: rotation.team_id || '',
+            location_id: rotation.location_id || '',
+            start_date: rotation.start_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+            interval_unit: rotation.interval_unit || 'week',
+            interval_count: rotation.interval_count || 1,
+            status: rotation.status || 'active'
+        });
     };
 
     // --- PAGE RENDERER ---
@@ -164,18 +219,34 @@ function App() {
             return (
                 <div className="grid-container">
                     <div className="enterprise-card">
-                        <h3>Provision New Identity</h3>
-                        <form onSubmit={handleCreateUser}>
+                        <h3>{editingUser ? 'Edit User' : 'Provision New Identity'}</h3>
+                        <form onSubmit={editingUser ? handleUpdateUser : handleCreateUser}>
                             <input className="enterprise-input" placeholder="Name" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} required />
                             <input className="enterprise-input" type="email" placeholder="Email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
-                            <input className="enterprise-input" type="password" placeholder="Password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
-                            <button type="submit" className="btn-primary">Sync to Database</button>
+                            {!editingUser && (
+                                <input className="enterprise-input" type="password" placeholder="Password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required />
+                            )}
+                            <div style={{display: 'flex', gap: '1rem'}}>
+                                <button type="submit" className="btn-primary">{editingUser ? 'Update User' : 'Sync to Database'}</button>
+                                {editingUser && (
+                                    <button type="button" onClick={() => { setEditingUser(null); setFormData(DEFAULT_USER_FORM); }} style={{background: '#eee', color: '#333'}} className="btn-primary">Cancel</button>
+                                )}
+                            </div>
                         </form>
                     </div>
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
-                            <thead><tr><th>Identity</th><th>Email</th></tr></thead>
-                            <tbody>{users.map(u => <tr key={u.id}><td><strong>{u.name}</strong></td><td>{u.email}</td></tr>)}</tbody>
+                            <thead><tr><th>Identity</th><th>Email</th><th>Actions</th></tr></thead>
+                            <tbody>{users.map(u => (
+                                <tr key={u.id}>
+                                    <td><strong>{u.name}</strong></td>
+                                    <td>{u.email}</td>
+                                    <td>
+                                        <button onClick={() => openEditUser(u)} style={{marginRight: '0.5rem'}}>Edit</button>
+                                        <button onClick={() => handleDeleteUser(u.id)} style={{color: 'red'}}>Delete</button>
+                                    </td>
+                                </tr>
+                            ))}</tbody>
                         </table>
                     </div>
                 </div>
@@ -199,17 +270,20 @@ function App() {
                                             <h4 style={{margin:0}}>{team.name}</h4>
                                             <p style={{margin:0, fontSize: '0.85rem', color: '#666'}}>{team.description || 'No description'}</p>
                                             <div style={{fontSize: '0.8rem', marginTop: '4px'}}>
-                                                <strong>Lead:</strong> {team.leadName} | <strong>Role:</strong> {team.role}
+                                                <strong>Lead:</strong> {team.lead?.name || 'None'} | <strong>Role:</strong> {team.team_role || 'Member'}
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedTeam(team); setActivePage("TeamDetails"); }}>View Details</button>
+                                        <div style={{display: 'flex', gap: '0.5rem'}}>
+                                            <button onClick={() => { setSelectedTeam(team); setActivePage("TeamDetails"); }}>View</button>
+                                            <button onClick={() => openEditTeam(team)}>Edit</button>
+                                            <button onClick={() => handleDeleteTeam(team.id)} style={{color: 'red'}}>Delete</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
 
-                    {/* RESTORED FULL FORM MODAL */}
                     {(showCreateTeamModal || showEditTeamModal) && (
                         <div className="modal-overlay" onClick={closeTeamModal}>
                             <div className="enterprise-card" style={{minWidth: '550px', maxHeight: '90vh', overflowY: 'auto'}} onClick={e => e.stopPropagation()}>
@@ -217,28 +291,22 @@ function App() {
                                 <form onSubmit={handleSaveTeam}>
                                     <label>Team Name</label>
                                     <input className="enterprise-input" value={teamFormData.name} onChange={e => handleTeamFieldChange('name', e.target.value)} required />
-
                                     <label>Team Color</label>
                                     <input type="color" style={{display:'block', marginBottom:'1rem', width: '60px', height: '40px'}} value={teamFormData.color} onChange={e => handleTeamFieldChange('color', e.target.value)} />
-
                                     <label>Team Lead</label>
                                     <select className="enterprise-input" value={teamFormData.leadId} onChange={e => handleTeamFieldChange('leadId', e.target.value)} required>
                                         <option value="">Select a lead</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.name || u.username}</option>)}
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                     </select>
-
-                                    <label>Assign Members (comma-separated usernames)</label>
+                                    <label>Assign Members (comma-separated names)</label>
                                     <input className="enterprise-input" placeholder="john, jane, bob" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', e.target.value)} />
-
                                     <label>Role</label>
                                     <select className="enterprise-input" value={teamFormData.role} onChange={e => handleTeamFieldChange('role', e.target.value)}>
                                         <option value="Lead">Lead</option>
                                         <option value="Member">Member</option>
                                     </select>
-
                                     <label>Description</label>
                                     <textarea className="enterprise-input" rows="4" value={teamFormData.description} onChange={e => handleTeamFieldChange('description', e.target.value)} />
-
                                     <div style={{display:'flex', gap: '1rem'}}>
                                         <button type="submit" className="btn-primary">Save Team</button>
                                         <button type="button" onClick={closeTeamModal} style={{background: '#eee', color: '#333'}} className="btn-primary">Cancel</button>
@@ -255,7 +323,7 @@ function App() {
             return (
                 <div className="grid-container">
                     <div className="enterprise-card">
-                        <h3>New Rotation</h3>
+                        <h3>{editingRotation ? 'Edit Rotation' : 'New Rotation'}</h3>
                         <form onSubmit={handleSaveRotation}>
                             <input className="enterprise-input" placeholder="Rotation Name" value={rotationFormData.name} onChange={e => setRotationFormData({...rotationFormData, name: e.target.value})} required />
                             <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData({...rotationFormData, rotation_type_id: e.target.value})} required>
@@ -277,13 +345,27 @@ function App() {
                                     {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                                 </select>
                             )}
-                            <button type="submit" className="btn-primary">Save Rotation</button>
+                            <div style={{display: 'flex', gap: '1rem'}}>
+                                <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
+                                {editingRotation && (
+                                    <button type="button" onClick={() => { setEditingRotation(null); setRotationFormData(DEFAULT_ROTATION_FORM); }} style={{background: '#eee', color: '#333'}} className="btn-primary">Cancel</button>
+                                )}
+                            </div>
                         </form>
                     </div>
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
-                            <thead><tr><th>Name</th><th>Scope</th></tr></thead>
-                            <tbody>{rotations.map(r => <tr key={r.id}><td><strong>{r.name}</strong></td><td>{r.teams?.name || r.locations?.name || "N/A"}</td></tr>)}</tbody>
+                            <thead><tr><th>Name</th><th>Scope</th><th>Actions</th></tr></thead>
+                            <tbody>{rotations.map(r => (
+                                <tr key={r.id}>
+                                    <td><strong>{r.name}</strong></td>
+                                    <td>{r.teams?.name || r.locations?.name || "N/A"}</td>
+                                    <td>
+                                        <button onClick={() => openEditRotation(r)} style={{marginRight: '0.5rem'}}>Edit</button>
+                                        <button onClick={() => handleDeleteRotation(r.id)} style={{color: 'red'}}>Delete</button>
+                                    </td>
+                                </tr>
+                            ))}</tbody>
                         </table>
                     </div>
                 </div>
@@ -300,9 +382,9 @@ function App() {
                         <p>{selectedTeam.description}</p>
                         <hr />
                         <div style={{textAlign: 'left', background: '#f9f9f9', padding: '20px', borderRadius: '10px'}}>
-                            <p><strong>Lead:</strong> {selectedTeam.leadName}</p>
-                            <p><strong>Members:</strong> {selectedTeam.membersList?.join(', ')}</p>
-                            <p><strong>Role Type:</strong> {selectedTeam.role}</p>
+                            <p><strong>Lead:</strong> {selectedTeam.lead?.name || 'None'}</p>
+                            <p><strong>Members:</strong> {selectedTeam.members || 'None'}</p>
+                            <p><strong>Role Type:</strong> {selectedTeam.team_role || 'Member'}</p>
                         </div>
                     </div>
                 </div>
