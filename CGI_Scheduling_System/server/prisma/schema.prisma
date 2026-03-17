@@ -95,6 +95,10 @@ model rotations {
   start_date           DateTime               @db.Date
   interval_unit        interval_type
   interval_count       Int?                   @default(1)
+  assigned_member_ids  Json?
+  notes                String?                @db.Text
+  allow_double_booking Boolean?               @default(false)
+  escalation_tiers     Json?
   status               status_type?           @default(active)
   rotation_assignments rotation_assignments[]
   locations            locations?             @relation(fields: [location_id], references: [id], onUpdate: NoAction)
