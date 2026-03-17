@@ -30,6 +30,9 @@ function App() {
     const [userFormSuccess, setUserFormSuccess] = useState('');
     const [editingUser, setEditingUser] = useState(null);
     const [showUserModal, setShowUserModal] = useState(false);
+    const [viewingUser, setViewingUser] = useState(null);
+    const [showViewModal, setShowViewModal] = useState(false);
+    const [viewUserError, setViewUserError] = useState('');
 
     // Team state
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
@@ -76,6 +79,26 @@ function App() {
         setUserForm({ first_name: user.first_name || '', last_name: user.last_name || '', username: user.username || '', email: user.email || '', phone: user.phone || '', location: user.location || '', team_id: user.team_id || '', roles: user.user_roles?.map(ur => ur.role_id) || [], password: '' });
         setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true);
     };
+    const openViewUser = async (user) => {
+        setViewUserError('');
+        try {
+            const res = await fetch(`/api/users/${user.id}`);
+            if (!res.ok) {
+                setViewUserError('User record not found.');
+                setViewingUser(null);
+                setShowViewModal(true);
+                return;
+            }
+            const data = await res.json();
+            setViewingUser(data);
+            setShowViewModal(true);
+        } catch {
+            setViewUserError('Failed to load user profile.');
+            setViewingUser(null);
+            setShowViewModal(true);
+        }
+    };
+
     const handleUserFieldChange = (field, value) => { setUserForm(prev => ({ ...prev, [field]: value })); if (userFormErrors[field]) setUserFormErrors(prev => { const e = { ...prev }; delete e[field]; return e; }); };
     const handleRoleToggle = (roleId) => { setUserForm(prev => { const exists = prev.roles.includes(roleId); return { ...prev, roles: exists ? prev.roles.filter(r => r !== roleId) : [...prev.roles, roleId] }; }); if (userFormErrors.roles) setUserFormErrors(prev => { const e = { ...prev }; delete e.roles; return e; }); };
 
@@ -168,6 +191,7 @@ function App() {
                                     <td>{u.user_roles?.map(ur => <span key={ur.role_id} style={{ display: 'inline-block', background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, marginRight: '4px' }}>{ur.roles?.name}</span>)}</td>
                                     <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
                                     <td>
+                                        <button onClick={() => openViewUser(u)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
                                         <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>
                                         <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>
                                     </td>
@@ -176,6 +200,91 @@ function App() {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* ── VIEW USER MODAL ── */}
+                    {showViewModal && (
+                        <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
+                            <div className="enterprise-card" style={{ minWidth: '520px', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>User Profile</h2>
+                                    <button onClick={() => setShowViewModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
+                                </div>
+
+                                {viewUserError ? (
+                                    <div style={{ background: '#fee2e2', color: '#991b1b', padding: '1rem', borderRadius: '8px', textAlign: 'center', fontWeight: 600 }}>
+                                        ⚠ {viewUserError}
+                                    </div>
+                                ) : viewingUser && (
+                                    <div>
+                                        {/* Avatar + Name Header */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '1.25rem', background: '#f9fafb', borderRadius: '10px', marginBottom: '1.5rem', border: '1px solid #e5e7eb' }}>
+                                            <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#e31937', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', fontWeight: 800, flexShrink: 0 }}>
+                                                {viewingUser.first_name?.charAt(0).toUpperCase()}{viewingUser.last_name?.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>{viewingUser.name}</h3>
+                                                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#6b7280' }}>{viewingUser.email}</p>
+                                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                                                    {viewingUser.user_roles?.map(ur => (
+                                                        <span key={ur.role_id} style={{ background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
+                                                            {ur.roles?.name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <span style={{ background: viewingUser.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: viewingUser.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '4px 12px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                {viewingUser.status}
+                                            </span>
+                                        </div>
+
+                                        {/* Profile Fields */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                                            {[
+                                                { label: 'First Name',     value: viewingUser.first_name },
+                                                { label: 'Last Name',      value: viewingUser.last_name },
+                                                { label: 'Username',       value: viewingUser.username ? `@${viewingUser.username}` : '—' },
+                                                { label: 'Email',          value: viewingUser.email },
+                                                { label: 'Phone',          value: viewingUser.phone || '—' },
+                                                { label: 'Location',       value: viewingUser.location || '—' },
+                                            ].map(field => (
+                                                <div key={field.label} style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6' }}>
+                                                    <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{field.label}</p>
+                                                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>{field.value || '—'}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Assigned Team */}
+                                        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6', marginBottom: '1.5rem' }}>
+                                            <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Team</p>
+                                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
+                                                {teams.find(t => t.id === viewingUser.team_id)?.name || '—'}
+                                            </p>
+                                        </div>
+
+                                        {/* Read-only notice */}
+                                        <p style={{ fontSize: '0.78rem', color: '#9ca3af', textAlign: 'center', margin: '0 0 1rem' }}>
+                                            🔒 Profile is read-only. Click Edit to make changes.
+                                        </p>
+
+                                        {/* Actions */}
+                                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                            <button
+                                                onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }}
+                                                className="btn-primary" style={{ flex: 1 }}>
+                                                Edit Profile
+                                            </button>
+                                            <button
+                                                onClick={() => setShowViewModal(false)}
+                                                style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
+                                                Close
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {showUserModal && (
                         <div className="modal-overlay" onClick={() => setShowUserModal(false)}>

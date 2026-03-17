@@ -104,6 +104,17 @@ app.get('/api/users', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const user = await prisma.users.findUnique({
+            where: { id: parseInt(req.params.id) },
+            include: { user_roles: { include: { roles: true } } }
+        });
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        res.json(user);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/users', async (req, res) => {
     const { first_name, last_name, username, email, password, phone, location, team_id, roles } = req.body;
     const validationErrors = validateUserPayload(req.body);
