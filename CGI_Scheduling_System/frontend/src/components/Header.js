@@ -1,87 +1,162 @@
-import React from 'react';
+import React, { useState } from 'react';
+import {
+    AppBar, Toolbar, Box, Button, InputBase,
+    Avatar, Typography, Menu, MenuItem, Divider, IconButton
+} from '@mui/material';
+import {
+    Search as SearchIcon,
+    Dashboard as DashboardIcon,
+    Group as GroupIcon,
+    Person as PersonIcon,
+    RotateRight as RotateIcon,
+    AdminPanelSettings as RolesIcon,
+    GridOn as GridOnIcon,
+    Logout as LogoutIcon,
+    KeyboardArrowDown as ArrowDownIcon,
+} from '@mui/icons-material';
+
+const NAV_ITEMS = [
+    { label: 'Overview',  page: 'Overview', icon: <DashboardIcon fontSize="small" /> },
+    { label: 'Matrix',    page: 'Matrix',   icon: <GridOnIcon fontSize="small" /> },
+    { label: 'Teams',     page: 'Teams',    icon: <GroupIcon fontSize="small" /> },
+];
+
+const ADMIN_NAV_ITEMS = [
+    { label: 'Users',     page: 'Users',     icon: <PersonIcon fontSize="small" /> },
+    { label: 'Rotations', page: 'Rotations', icon: <RotateIcon fontSize="small" /> },
+    { label: 'Roles',     page: 'Roles',     icon: <RolesIcon fontSize="small" /> },
+];
 
 const Header = ({ user, onLogout, activePage, onNavigate }) => {
-    const isAdmin = user?.role === "Administrators" || user?.role === "Admin";
+    const isAdmin = user?.role === 'Administrators' || user?.role === 'Admin';
+    const [anchorEl, setAnchorEl] = useState(null);
+    const allNavItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 
     return (
-        <header className="app-header">
-            <div className="header-left">
-                <button
-                    type="button"
-                    className="logo-button"
-                    onClick={() => onNavigate("Overview")}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+        <AppBar position="sticky" elevation={0} sx={{
+            backgroundColor: '#ffffff',
+            borderBottom: '1px solid #e5e7eb',
+            color: '#111827',
+        }}>
+            <Toolbar sx={{ gap: 2, minHeight: '64px !important' }}>
+
+                {/* Logo */}
+                <Box
+                    onClick={() => onNavigate('Overview')}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', mr: 2, flexShrink: 0 }}
                 >
-                    <div style={{ backgroundColor: '#e31937', color: 'white', padding: '4px 8px', fontWeight: '800', borderRadius: '4px' }}>CGI</div>
-                    <span className="logo-lockup" style={{ textAlign: 'left' }}>
-                        <span className="logo-title" style={{ display: 'block', fontWeight: '700', fontSize: '1rem', color: '#111827' }}>Scheduling</span>
-                        <span className="logo-subtitle" style={{ display: 'block', fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase' }}>Enterprise System</span>
-                    </span>
-                </button>
-                <nav className="header-nav" style={{ marginLeft: '20px' }}>
-                    <button
-                        type="button"
-                        className={`nav-btn ${activePage === "Overview" ? "active" : ""}`}
-                        onClick={() => onNavigate("Overview")}
-                    >
-                        Overview
-                    </button>
-                    <button
-                        type="button"
-                        className={`nav-btn ${activePage === "Teams" ? "active" : ""}`}
-                        onClick={() => onNavigate("Teams")}
-                    >
-                        Teams
-                    </button>
-                    {isAdmin && (
-                        <>
-                            <button
-                                type="button"
-                                className={`nav-btn ${activePage === "Users" ? "active" : ""}`}
-                                onClick={() => onNavigate("Users")}
-                            >
-                                Users
-                            </button>
-                            <button
-                                type="button"
-                                className={`nav-btn ${activePage === "Rotations" ? "active" : ""}`}
-                                onClick={() => onNavigate("Rotations")}
-                            >
-                                Rotations
-                            </button>
-                            <button
-                                type="button"
-                                className={`nav-btn ${activePage === "Roles" ? "active" : ""}`}
-                                onClick={() => onNavigate("Roles")}
-                            >
-                                Roles
-                            </button>
-                        </>
-                    )}
-                </nav>
-            </div>
+                    <Box sx={{
+                        backgroundColor: '#e31937', color: 'white',
+                        px: 1, py: 0.5, fontWeight: 800, borderRadius: '4px',
+                        fontSize: '0.95rem', letterSpacing: '0.05em',
+                    }}>
+                        CGI
+                    </Box>
+                    <Box>
+                        <Typography variant="body2" fontWeight={700} lineHeight={1.2} color="#111827">
+                            Scheduling
+                        </Typography>
+                        <Typography variant="caption" color="#6b7280"
+                                    sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.6rem' }}>
+                            Enterprise System
+                        </Typography>
+                    </Box>
+                </Box>
 
-            <div className="header-center">
-                <input
-                    className="search-input"
-                    type="search"
-                    placeholder="Search employees or schedules..."
-                />
-            </div>
+                {/* Nav Items */}
+                <Box sx={{ display: 'flex', gap: 0.5, flexGrow: 0 }}>
+                    {allNavItems.map(({ label, page, icon }) => (
+                        <Button
+                            key={page}
+                            startIcon={icon}
+                            onClick={() => onNavigate(page)}
+                            size="small"
+                            sx={{
+                                color: activePage === page ? '#e31937' : '#6b7280',
+                                backgroundColor: activePage === page ? '#fef2f2' : 'transparent',
+                                borderBottom: activePage === page ? '2px solid #e31937' : '2px solid transparent',
+                                borderRadius: '4px 4px 0 0',
+                                px: 1.5, py: 1,
+                                fontWeight: activePage === page ? 600 : 400,
+                                fontSize: '0.85rem',
+                                textTransform: 'none',
+                                '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' },
+                            }}
+                        >
+                            {label}
+                        </Button>
+                    ))}
+                </Box>
 
-            <div className="header-right">
-                <div className="user-pill">
-                    <span className={`status-dot ${isAdmin ? "status-admin" : "status-member"}`} />
-                    <div style={{ textAlign: 'left', marginRight: '10px' }}>
-                        <div className="user-name">{user?.name || "User"}</div>
-                        <div className="user-role">{user?.role || "Scheduler"}</div>
-                    </div>
-                    <button type="button" className="link-btn" onClick={onLogout} style={{ borderLeft: '1px solid #ddd', paddingLeft: '10px', marginLeft: '5px' }}>
+                {/* Search */}
+                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', px: 2 }}>
+                    <Box sx={{
+                        display: 'flex', alignItems: 'center',
+                        backgroundColor: '#f9fafb', border: '1px solid #e5e7eb',
+                        borderRadius: '8px', px: 2, py: 0.5,
+                        width: '100%', maxWidth: 400,
+                        '&:focus-within': { borderColor: '#e31937', backgroundColor: '#fff' },
+                    }}>
+                        <SearchIcon sx={{ color: '#9ca3af', fontSize: '1.1rem', mr: 1 }} />
+                        <InputBase
+                            placeholder="Search employees or schedules..."
+                            sx={{ fontSize: '0.875rem', width: '100%', color: '#111827' }}
+                        />
+                    </Box>
+                </Box>
+
+                {/* User Pill */}
+                <Box
+                    onClick={(e) => setAnchorEl(e.currentTarget)}
+                    sx={{
+                        display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer',
+                        border: '1px solid #e5e7eb', borderRadius: '8px',
+                        px: 1.5, py: 0.75, flexShrink: 0,
+                        '&:hover': { backgroundColor: '#f9fafb' },
+                    }}
+                >
+                    <Avatar sx={{ width: 28, height: 28, backgroundColor: '#e31937', fontSize: '0.75rem' }}>
+                        {user?.name?.charAt(0) || 'U'}
+                    </Avatar>
+                    <Box>
+                        <Typography variant="body2" fontWeight={600} lineHeight={1.2} fontSize="0.8rem">
+                            {user?.name || 'User'}
+                        </Typography>
+                        <Typography variant="caption" color="#6b7280" fontSize="0.7rem">
+                            {user?.role || 'Scheduler'}
+                        </Typography>
+                    </Box>
+                    <ArrowDownIcon sx={{ fontSize: '1rem', color: '#9ca3af' }} />
+                </Box>
+
+                <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={() => setAnchorEl(null)}
+                    PaperProps={{
+                        sx: {
+                            mt: 1, minWidth: 160, borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        },
+                    }}
+                >
+                    <Box sx={{ px: 2, py: 1 }}>
+                        <Typography variant="body2" fontWeight={600}>{user?.name}</Typography>
+                        <Typography variant="caption" color="#6b7280">{user?.email}</Typography>
+                    </Box>
+                    <Divider />
+                    <MenuItem
+                        onClick={() => { setAnchorEl(null); onLogout(); }}
+                        sx={{ color: '#e31937', gap: 1, fontSize: '0.875rem' }}
+                    >
+                        <LogoutIcon fontSize="small" />
                         Log out
-                    </button>
-                </div>
-            </div>
-        </header>
+                    </MenuItem>
+                </Menu>
+
+            </Toolbar>
+        </AppBar>
     );
 };
 
