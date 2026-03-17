@@ -83,6 +83,10 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     border: 1px solid #e5e7eb;
 }
+.enterprise-card {
+    max-height: 80vh; /* Limits height so it doesn't push off screen */
+    overflow-y: auto; /* Allows scrolling within the card */
+}
 
 .enterprise-card h3 {
     margin-top: 0;
