@@ -154,3 +154,118 @@ html, body, #root, .App {
   font-size: 0.9rem;
   color: #718096;
 }
+
+/* The semi-transparent background that covers the whole screen */
+.modal-overlay {
+                                                                    position: fixed;
+                                                                    top: 0;
+                                                                    left: 0;
+                                                                    right: 0;
+                                                                    bottom: 0;
+                                                                    background: rgba(17, 24, 39, 0.7); /* Dark semi-transparent overlay */
+                                                                    display: flex;
+                                                                    justify-content: center;
+                                                                    align-items: center;
+                                                                    z-index: 9999;
+                                                                    backdrop-filter: blur(4px); /* Modern blur effect */
+                                                                  }
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.info-box {
+  background: #f9fafb;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.info-box label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #9ca3af;
+  font-weight: 700;
+}
+
+.avatar-circle {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: #e31937;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #9ca3af;
+}
+
+.btn-cancel {
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Ensure the action column doesn't wrap and aligns right */
+.action-cell {
+  white-space: nowrap;
+  text-align: right;
+  width: 1%; /* Forces the cell to be as small as possible */
+}
+
+/* Base style for all small table buttons */
+.btn-table {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+/* Specific button colors to match your theme */
+.btn-view {
+  background: #f0f9ff;
+  color: #0369a1;
+  border-color: #bae6fd;
+  margin-right: 4px;
+}
+
+.btn-view:hover { background: #e0f2fe; }
+
+.btn-edit {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+  margin-right: 4px;
+}
+
+.btn-edit:hover { background: #e5e7eb; }
+
+.btn-delete {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.btn-delete:hover { background: #fee2e2; }

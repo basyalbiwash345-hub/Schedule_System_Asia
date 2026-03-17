@@ -3,6 +3,7 @@ import Login from './components/Login';
 import Header from './components/Header';
 import './styles/Dashboard.css';
 import MatrixView from './components/MatrixView';
+import './App.css';
 
 const ROTATION_NAME_OPTIONS = [
     'Team-Level',
@@ -120,8 +121,21 @@ function App() {
     const openCreateUser = () => { setEditingUser(null); setUserForm(DEFAULT_USER_FORM); setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true); };
     const openEditUser = (user) => {
         setEditingUser(user);
-        setUserForm({ first_name: user.first_name || '', last_name: user.last_name || '', username: user.username || '', email: user.email || '', phone: user.phone || '', location: user.location || '', team_id: user.team_id || '', roles: user.user_roles?.map(ur => ur.role_id) || [], password: '' });
-        setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true);
+        setUserForm({
+            first_name: user.first_name || '',
+            last_name: user.last_name || '',
+            username: user.username || '',
+            email: user.email || '',
+            phone: user.phone || '',
+            location: user.location || '',
+            team_id: user.team_id || '',
+            status: user.status || 'active', // Add this
+            roles: user.user_roles?.map(ur => ur.role_id) || [],
+            password: '' // Don't fill password on edit
+        });
+        setUserFormErrors({});
+        setUserFormSuccess('');
+        setShowUserModal(true);
     };
     const openViewUser = async (user) => {
         setViewUserError('');
@@ -326,10 +340,9 @@ function App() {
 
     const renderPageContent = () => {
         if (activePage === 'Users') {
-            // Filter logic based on your criteria
             const filteredUsers = users.filter(u => {
                 const matchesSearch =
-                    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (u.first_name + ' ' + u.last_name).toLowerCase().includes(searchTerm.toLowerCase()) ||
                     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -339,72 +352,33 @@ function App() {
 
                 return matchesSearch && matchesTeam && matchesStatus && matchesRole;
             });
+
             return (
-                <div>
+                <div style={{ position: 'relative' }}>
+                    {/* Header & Filters */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2 style={{ margin: 0, color: '#111827' }}>User Management</h2>
                         <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateUser}>+ Create User</button>
                     </div>
-                    {/* ── SEARCH & FILTER BAR ── */}
-                    <div style={{
-                        display: 'flex',
-                        gap: '1rem',
-                        marginBottom: '1.5rem',
-                        alignItems: 'center',
-                        background: '#fff',
-                        padding: '1rem',
-                        borderRadius: '8px',
-                        border: '1px solid #e5e7eb'
-                    }}>
-                        {/* Search Input */}
-                        <div style={{ flex: 2 }}>
-                            <input
-                                type="text"
-                                placeholder="Search name, email, or username..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
-                            />
-                        </div>
 
-                        {/* Team Filter */}
-                        <div style={{ flex: 1 }}>
-                            <select
-                                value={teamFilter}
-                                onChange={(e) => setTeamFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
-                            >
-                                <option value="">All Teams</option>
-                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                        </div>
-
-                        {/* Role Filter */}
-                        <div style={{ flex: 1 }}>
-                            <select
-                                value={roleFilter}
-                                onChange={(e) => setRoleFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
-                            >
-                                <option value="">All Roles</option>
-                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
-                        </div>
-
-                        {/* Status Filter */}
-                        <div style={{ flex: 1 }}>
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
-                            >
-                                <option value="">All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                            </select>
-                        </div>
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                        <input type="text" placeholder="Search users..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle(), flex: 2, marginBottom: 0 }} />
+                        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} style={{ ...inputStyle(), flex: 1, marginBottom: 0 }}>
+                            <option value="">All Teams</option>
+                            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={{ ...inputStyle(), flex: 1, marginBottom: 0 }}>
+                            <option value="">All Roles</option>
+                            {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle(), flex: 1, marginBottom: 0 }}>
+                            <option value="">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
                     </div>
 
+                    {/* User Table */}
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
                             <thead>
@@ -413,89 +387,44 @@ function App() {
                                 <th>Last Name</th>
                                 <th>Username</th>
                                 <th>Email</th>
-                                <th>Phone</th>
-                                {/* Column 5 */}
-                                <th>Location</th>
-                                {/* Column 6 */}
+                                <th>Phone</th>     {/* Re-added column */}
+                                <th>Location</th>  {/* Re-added column */}
                                 <th>Assigned Team</th>
-                                {/* Column 7 */}
-                                <th>Roles</th>
-                                {/* Column 8 */}
                                 <th>Status</th>
-                                {/* Column 9 */}
-                                <th>Actions</th>
-                                {/* Column 10 */}
+                                <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
                             </thead>
                             <tbody>
                             {filteredUsers.length === 0 ? (
-                                <tr>
-                                    <td colSpan={10} style={{textAlign: 'center', color: '#9ca3af', padding: '2rem'}}>No
-                                        users found.
-                                    </td>
-                                </tr>
+                                <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af' }}>No users found.</td></tr>
                             ) : filteredUsers.map(u => (
                                 <tr key={u.id}>
-                                    {/* Displaying First and Last Name separately */}
                                     <td>{u.first_name}</td>
                                     <td>{u.last_name}</td>
-
                                     <td style={{color: '#6b7280'}}>{u.username || '—'}</td>
                                     <td>{u.email}</td>
-
-                                    {/* ADDED THESE TWO MISSING CELLS TO FIX ALIGNMENT */}
-                                    <td style={{color: '#6b7280'}}>{u.phone || '—'}</td>
-                                    <td style={{color: '#6b7280'}}>{u.location || '—'}</td>
-
-                                    {/* Logic to find the team name from the teams state */}
-                                    <td>
-                                        {teams.find(t => t.id === u.team_id)?.name || '—'}
-                                    </td>
-
-                                    <td>
-                                        {u.user_roles?.map(ur => (
-                                            <span key={ur.role_id} style={{
-                                                display: 'inline-block',
-                                                background: '#fef2f2',
-                                                color: '#e31937',
-                                                borderRadius: '12px',
-                                                padding: '2px 8px',
-                                                fontSize: '0.75rem',
-                                                fontWeight: 600,
-                                                marginRight: '4px'
-                                            }}>
-                        {ur.roles?.name}
-                    </span>
-                                        ))}
-                                    </td>
-                                    <td>
-                <span style={{
-                    background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6',
-                    color: u.status === 'active' ? '#065f46' : '#6b7280',
-                    borderRadius: '12px',
-                    padding: '2px 10px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600
-                }}>
-                    {u.status}
-                </span>
-                                    </td>
-                                    <td>
-                                        <button onClick={() => openViewUser(u)} style={{
-                                            marginRight: '0.5rem',
-                                            background: '#f0f9ff',
-                                            color: '#0369a1',
-                                            border: '1px solid #bae6fd',
-                                            borderRadius: '4px',
-                                            padding: '3px 10px',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem',
-                                            fontWeight: 600
-                                        }}>View
+                                    <td>{u.phone || '—'}</td>     {/* Display Phone */}
+                                    <td>{u.location || '—'}</td>  {/* Display Location */}
+                                    <td>{teams.find(t => t.id === u.team_id)?.name || '—'}</td>
+                                    <td><span className={`status-pill ${u.status}`}>{u.status}</span></td>
+                                    <td className="action-cell" style={{whiteSpace: 'nowrap', textAlign: 'right'}}>
+                                        <button
+                                            onClick={() => openViewUser(u)}
+                                            className="btn-table btn-view"
+                                        >
+                                            View
                                         </button>
-                                        <button onClick={() => openEditUser(u)} style={{marginRight: '0.5rem'}}>Edit
+                                        <button
+                                            onClick={() => openEditUser(u)}
+                                            className="btn-table btn-edit"
+                                        >
+                                            Edit
                                         </button>
-                                        <button onClick={() => handleDeleteUser(u)} style={{color: 'red'}}>Delete
+                                        <button
+                                            onClick={() => handleDeleteUser(u)}
+                                            className="btn-table btn-delete"
+                                        >
+                                            Delete
                                         </button>
                                     </td>
                                 </tr>
@@ -507,230 +436,170 @@ function App() {
                     {/* ── VIEW USER MODAL ── */}
                     {showViewModal && (
                         <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
-                            <div className="enterprise-card"
-                                 style={{minWidth: '520px', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto'}}
-                                 onClick={e => e.stopPropagation()}>
-                                <div style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    marginBottom: '1.5rem'
-                                }}>
-                                    <h2 style={{margin: 0, fontSize: '1.1rem', color: '#111827'}}>User Profile</h2>
-                                    <button onClick={() => setShowViewModal(false)} style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        fontSize: '1.2rem',
-                                        cursor: 'pointer',
-                                        color: '#6b7280'
-                                    }}>✕
-                                    </button>
+                            <div className="modal-content" style={{ minWidth: '550px' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h2 style={{ margin: 0 }}>User Profile Details</h2>
+                                    <button onClick={() => setShowViewModal(false)} className="close-modal-btn">✕</button>
                                 </div>
 
-                                {viewUserError ? (
-                                    <div style={{
-                                        background: '#fee2e2',
-                                        color: '#991b1b',
-                                        padding: '1rem',
-                                        borderRadius: '8px',
-                                        textAlign: 'center',
-                                        fontWeight: 600
-                                    }}>
-                                        ⚠ {viewUserError}
-                                    </div>
-                                ) : viewingUser && (
-                                    <div>
-                                        {/* Avatar + Name Header */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '1.25rem',
-                                            padding: '1.25rem',
-                                            background: '#f9fafb',
-                                            borderRadius: '10px',
-                                            marginBottom: '1.5rem',
-                                            border: '1px solid #e5e7eb'
-                                        }}>
-                                            <div style={{
-                                                width: 64,
-                                                height: 64,
-                                                borderRadius: '50%',
-                                                backgroundColor: '#e31937',
-                                                color: '#fff',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '1.4rem',
-                                                fontWeight: 800,
-                                                flexShrink: 0
-                                            }}>
-                                            {viewingUser.first_name?.charAt(0).toUpperCase()}{viewingUser.last_name?.charAt(0).toUpperCase()}
+                                {viewingUser && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        {/* Full Name Row */}
+                                        <div className="info-box"><label>First Name</label><p>{viewingUser.first_name}</p></div>
+                                        <div className="info-box"><label>Last Name</label><p>{viewingUser.last_name}</p></div>
+
+                                        {/* Contact Row */}
+                                        <div className="info-box"><label>Username</label><p>@{viewingUser.username || '—'}</p></div>
+                                        <div className="info-box"><label>Email</label><p>{viewingUser.email}</p></div>
+
+                                        {/* Secondary Info Row */}
+                                        <div className="info-box"><label>Phone</label><p>{viewingUser.phone || '—'}</p></div>
+                                        <div className="info-box"><label>Location</label><p>{viewingUser.location || '—'}</p></div>
+
+                                        {/* Status and Team Row */}
+                                        <div className="info-box">
+                                            <label>Status</label>
+                                            <span className={`status-pill ${viewingUser.status}`}>{viewingUser.status}</span>
+                                        </div>
+                                        <div className="info-box">
+                                            <label>Assigned Team</label>
+                                            <p>{teams.find(t => t.id === viewingUser.team_id)?.name || 'Unassigned'}</p>
+                                        </div>
+
+                                        {/* Roles Display */}
+                                        <div className="info-box" style={{ gridColumn: 'span 2' }}>
+                                            <label>Assigned Roles</label>
+                                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                                {viewingUser.user_roles?.map(ur => (
+                                                    <span key={ur.role_id} className="role-badge-selected" style={{ fontSize: '0.75rem' }}>
+                                    {ur.roles?.name}
+                                </span>
+                                                ))}
                                             </div>
-                                            <div style={{ flex: 1 }}>
-                                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>{viewingUser.name}</h3>
-                                                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#6b7280' }}>{viewingUser.email}</p>
-                                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                                                    {viewingUser.user_roles?.map(ur => (
-                                                        <span key={ur.role_id} style={{ background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
-                                                            {ur.roles?.name}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <span style={{ background: viewingUser.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: viewingUser.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '4px 12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                                {viewingUser.status}
-                                            </span>
-                                        </div>
-
-                                        {/* Profile Fields */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                                            {[
-                                                { label: 'First Name',     value: viewingUser.first_name },
-                                                { label: 'Last Name',      value: viewingUser.last_name },
-                                                { label: 'Username',       value: viewingUser.username ? `@${viewingUser.username}` : '—' },
-                                                { label: 'Email',          value: viewingUser.email },
-                                                { label: 'Phone',          value: viewingUser.phone || '—' },
-                                                { label: 'Location',       value: viewingUser.location || '—' },
-                                            ].map(field => (
-                                                <div key={field.label} style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6' }}>
-                                                    <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{field.label}</p>
-                                                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>{field.value || '—'}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Assigned Team */}
-                                        {/* Assigned Team */}
-                                        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6', marginBottom: '1.5rem' }}>
-                                            <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Team</p>
-                                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
-                                                {/* Finding the team name from the teams state array using the ID */}
-                                                {teams.find(t => t.id === viewingUser.team_id)?.name || '—'}
-                                            </p>
-                                        </div>
-
-                                        {/* Read-only notice */}
-                                        <p style={{ fontSize: '0.78rem', color: '#9ca3af', textAlign: 'center', margin: '0 0 1rem' }}>
-                                            🔒 Profile is read-only. Click Edit to make changes.
-                                        </p>
-
-                                        {/* Actions */}
-                                        <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                            <button
-                                                onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }}
-                                                className="btn-primary" style={{ flex: 1 }}>
-                                                Edit Profile
-                                            </button>
-                                            <button
-                                                onClick={() => setShowViewModal(false)}
-                                                style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
-                                                Close
-                                            </button>
                                         </div>
                                     </div>
                                 )}
+
+                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                    <button
+                                        onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }}
+                                        className="btn-primary" style={{ flex: 1 }}
+                                    >
+                                        Edit This User
+                                    </button>
+                                    <button onClick={() => setShowViewModal(false)} className="btn-cancel" style={{ flex: 1 }}>
+                                        Close
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
 
+                    {/* ── CREATE/EDIT USER MODAL ── */}
                     {showUserModal && (
                         <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
-                            <div className="enterprise-card" style={{ minWidth: '620px', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                            <div className="modal-content" style={{ minWidth: '600px' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h2 style={{ margin: 0 }}>{editingUser ? 'Edit User' : 'Create User'}</h2>
-                                    <button onClick={() => setShowUserModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
+                                    <h2 style={{ margin: 0 }}>{editingUser ? 'Edit User' : 'Create New User'}</h2>
+                                    <button onClick={() => setShowUserModal(false)} className="close-modal-btn">✕</button>
                                 </div>
 
-                                {userFormErrors.general && <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem' }}>{userFormErrors.general}</div>}
-                                {userFormSuccess && <div style={{ background: '#ecfdf5', color: '#065f46', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', fontWeight: 600 }}>✓ {userFormSuccess}</div>}
-
                                 <form onSubmit={handleSaveUser}>
-                                    {/* First + Last Name */}
+                                    {/* Name Row */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                         <div>
-                                            <label style={labelStyle}>First Name <span style={{ color: '#e31937' }}>*</span></label>
-                                            <input style={inputStyle('first_name')} placeholder="First name" value={userForm.first_name} onChange={e => handleUserFieldChange('first_name', e.target.value)} />
-                                            {userFormErrors.first_name && <p style={errorStyle}>{userFormErrors.first_name}</p>}
+                                            <label style={labelStyle}>First Name</label>
+                                            <input style={inputStyle()} value={userForm.first_name} onChange={e => handleUserFieldChange('first_name', e.target.value)} required />
                                         </div>
                                         <div>
-                                            <label style={labelStyle}>Last Name <span style={{ color: '#e31937' }}>*</span></label>
-                                            <input style={inputStyle('last_name')} placeholder="Last name" value={userForm.last_name} onChange={e => handleUserFieldChange('last_name', e.target.value)} />
-                                            {userFormErrors.last_name && <p style={errorStyle}>{userFormErrors.last_name}</p>}
+                                            <label style={labelStyle}>Last Name</label>
+                                            <input style={inputStyle()} value={userForm.last_name} onChange={e => handleUserFieldChange('last_name', e.target.value)} required />
                                         </div>
                                     </div>
 
-                                    {/* Email + Username */}
+                                    {/* Email + Username Row */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                         <div>
-                                            <label style={labelStyle}>Email <span style={{ color: '#e31937' }}>*</span></label>
-                                            <input style={inputStyle('email')} type="email" placeholder="user@cgi.com" value={userForm.email} onChange={e => handleUserFieldChange('email', e.target.value)} />
-                                            {userFormErrors.email && <p style={errorStyle}>{userFormErrors.email}</p>}
+                                            <label style={labelStyle}>Email</label>
+                                            <input type="email" style={inputStyle()} value={userForm.email} onChange={e => handleUserFieldChange('email', e.target.value)} required />
                                         </div>
                                         <div>
-                                            <label style={labelStyle}>Username <span style={{ color: '#e31937' }}>*</span></label>
-                                            <input style={inputStyle('username')} placeholder="jsmith" value={userForm.username} onChange={e => handleUserFieldChange('username', e.target.value)} />
-                                            {userFormErrors.username && <p style={errorStyle}>{userFormErrors.username}</p>}
+                                            <label style={labelStyle}>Username</label>
+                                            <input style={inputStyle()} value={userForm.username} onChange={e => handleUserFieldChange('username', e.target.value)} required />
                                         </div>
                                     </div>
 
-                                    {/* Phone + Location */}
+                                    {/* Phone + Location Row */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                         <div>
                                             <label style={labelStyle}>Phone</label>
-                                            <input style={inputStyle('phone')} placeholder="+1 (555) 000-0000" value={userForm.phone} onChange={e => handleUserFieldChange('phone', e.target.value)} />
+                                            <input style={inputStyle()} placeholder="+1 (555) 000-0000" value={userForm.phone} onChange={e => handleUserFieldChange('phone', e.target.value)} />
                                         </div>
                                         <div>
                                             <label style={labelStyle}>Location</label>
-                                            <select style={inputStyle('location')} value={userForm.location} onChange={e => handleUserFieldChange('location', e.target.value)}>
+                                            <select style={inputStyle()} value={userForm.location} onChange={e => handleUserFieldChange('location', e.target.value)}>
                                                 <option value="">Select location</option>
                                                 {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                                             </select>
                                         </div>
                                     </div>
 
-                                    {/* Assigned Team */}
+                                    {/* Team Selection */}
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Assigned Team</label>
-                                        <select style={inputStyle('team_id')} value={userForm.team_id} onChange={e => handleUserFieldChange('team_id', e.target.value)}>
-                                            <option value="">Select a team</option>
+                                        <select style={inputStyle()} value={userForm.team_id} onChange={e => handleUserFieldChange('team_id', e.target.value)}>
+                                            <option value="">Select Team</option>
                                             {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
                                     </div>
 
-                                    {/* Roles */}
-                                    <div style={fieldWrap}>
-                                        <label style={labelStyle}>Role(s) <span style={{ color: '#e31937' }}>*</span></label>
-                                        {roles.length === 0 ? (
-                                            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No roles available. Add roles first.</p>
-                                        ) : (
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                                {roles.map(role => {
-                                                    const selected = userForm.roles.includes(role.id);
-                                                    return (
-                                                        <button key={role.id} type="button" onClick={() => handleRoleToggle(role.id)} style={{ padding: '0.4rem 0.9rem', borderRadius: '20px', border: `2px solid ${selected ? '#e31937' : '#e5e7eb'}`, background: selected ? '#fef2f2' : '#fff', color: selected ? '#e31937' : '#6b7280', fontWeight: selected ? 700 : 400, cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.15s' }}>
-                                                            {selected ? '✓ ' : ''}{role.name}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                        {userFormErrors.roles && <p style={errorStyle}>{userFormErrors.roles}</p>}
-                                    </div>
-
-                                    {/* Temp Password (create only) */}
-                                    {!editingUser && (
+                                    {/* Status (Only show when editing) */}
+                                    {editingUser && (
                                         <div style={fieldWrap}>
-                                            <label style={labelStyle}>Temporary Password <span style={{ color: '#e31937' }}>*</span></label>
-                                            <input style={inputStyle('password')} type="password" placeholder="Min 8 chars, upper, lower, number, special" value={userForm.password} onChange={e => handleUserFieldChange('password', e.target.value)} />
-                                            {userFormErrors.password
-                                                ? <p style={errorStyle}>{userFormErrors.password}</p>
-                                                : <p style={{ color: '#6b7280', fontSize: '0.75rem', margin: '4px 0 0' }}>User will be required to change this on first login.</p>}
+                                            <label style={labelStyle}>Status</label>
+                                            <select style={inputStyle()} value={userForm.status} onChange={e => handleUserFieldChange('status', e.target.value)}>
+                                                <option value="active">Active</option>
+                                                <option value="inactive">Inactive</option>
+                                            </select>
                                         </div>
                                     )}
 
-                                    <div style={{ display: 'flex', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid #f3f4f6' }}>
-                                        <button type="submit" className="btn-primary" style={{ flex: 1 }}>{editingUser ? 'Update User' : 'Create User'}</button>
-                                        <button type="button" onClick={() => setShowUserModal(false)} style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                    {/* Roles Selection */}
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Role(s)</label>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {roles.map(role => {
+                                                const selected = userForm.roles.includes(role.id);
+                                                return (
+                                                    <button
+                                                        key={role.id}
+                                                        type="button"
+                                                        onClick={() => handleRoleToggle(role.id)}
+                                                        className={selected ? 'role-badge-selected' : 'role-badge-default'}
+                                                    >
+                                                        {role.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Password Row (Only for new users) */}
+                                    {!editingUser && (
+                                        <div style={fieldWrap}>
+                                            <label style={labelStyle}>Temporary Password</label>
+                                            <input type="password" style={inputStyle()} value={userForm.password} onChange={e => handleUserFieldChange('password', e.target.value)} required />
+                                        </div>
+                                    )}
+
+                                    {/* Footer Actions */}
+                                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #f3f4f6' }}>
+                                        <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                                            {editingUser ? 'Save Changes' : 'Create User'}
+                                        </button>
+                                        <button type="button" onClick={() => setShowUserModal(false)} className="btn-cancel" style={{ flex: 1 }}>
+                                            Cancel
+                                        </button>
                                     </div>
                                 </form>
                             </div>
@@ -743,9 +612,16 @@ function App() {
         if (activePage === 'Teams') {
             return (
                 <div className="enterprise-card no-padding">
-                    <div style={{ padding: '1.5rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{
+                        padding: '1.5rem',
+                        borderBottom: '1px solid #eee',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
                         <h3>Active Teams ({teams.length})</h3>
-                        <button className="btn-primary" style={{ width: 'auto' }} onClick={openCreateTeam}>+ Create Team</button>
+                        <button className="btn-primary" style={{width: 'auto'}} onClick={openCreateTeam}>+ Create Team
+                        </button>
                     </div>
                     <div style={{ padding: '1.5rem' }}>
                         {teams.length === 0 ? <p>No teams found.</p> : (
