@@ -269,13 +269,13 @@ app.get('/api/teams', async (req, res) => {
 
 app.post('/api/teams', async (req, res) => {
     try {
-        const { name, color, leadId, description, role, members } = req.body;
+        const { name, color, leadId, description, members } = req.body;
         const team = await prisma.teams.create({
             data: {
                 name, color,
                 lead_id: parseOptionalInt(leadId),
-                description, team_role: role,
-                members: members ? JSON.stringify(members) : null,
+                description,
+                members: Array.isArray(members) ? JSON.stringify(members) : null,
             },
             include: { lead: true },
         });
@@ -285,15 +285,15 @@ app.post('/api/teams', async (req, res) => {
 
 app.put('/api/teams/:id', async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
-    const { name, color, leadId, description, role, members } = req.body;
+    const { name, color, leadId, description, members } = req.body;
     try {
         const updatedTeam = await prisma.teams.update({
             where: { id: teamId },
             data: {
                 name, color,
                 lead_id: parseOptionalInt(leadId),
-                description, team_role: role,
-                members: members ? JSON.stringify(members) : null,
+                description,
+                members: Array.isArray(members) ? JSON.stringify(members) : null,
             },
             include: { lead: true },
         });

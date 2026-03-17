@@ -1,1 +1,12 @@
-# Teams CRUD Persistence & Icons&#10;&#10;- [ ] 1. Extend schema.prisma Team model with color, leadId (Users), members Json, teamRole, description&#10;- [ ] 2. Prisma migrate & generate&#10;- [ ] 3. Create CGI_Scheduling_System/routes/teams.js CRUD routes&#10;- [ ] 4. Update App.js: API calls for teams CRUD, load on Teams page, icons for actions&#10;- [ ] 5. Test backend/frontend integration&#10;- [ ] 6. Complete&#10;
+# Fix Prisma DATABASE_URL Error - Progress Tracker
+
+## Steps:
+- [x] 1. Rename `CGI_Scheduling_System/server/env` → `CGI_Scheduling_System/server/.env`
+- [x] 2. Edit `.env`: Remove quotes from `DATABASE_URL=...` line
+- [x] 3. Run `cd CGI_Scheduling_System/server && npx prisma generate`
+- [ ] 4. **Fix DATABASE_URL search_path error** (remove ?schema=public)
+- [ ] 4b. Test `cd CGI_Scheduling_System/server && node index.js` (expect success, seeds data)
+
+- [ ] 5. Verify API: curl http://localhost:5000/api/roles
+
+**Current step: 1/5**

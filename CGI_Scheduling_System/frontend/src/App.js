@@ -39,7 +39,7 @@ const DEFAULT_ROTATION_FORM = {
     allow_double_booking: false,
     escalation_tiers: ''
 };
-const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: '', role: 'Member', description: '' };
+const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [], description: '' };
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
 
 function App() {
@@ -188,7 +188,7 @@ function App() {
 
     const handleTeamFieldChange = (field, value) => setTeamFormData(prev => ({ ...prev, [field]: value }));
     const openCreateTeam = () => { setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); };
-    const openEditTeam = (team) => { setTeamFormData({ name: team.name, color: team.color || '#e31937', leadId: team.lead_id || '', members: team.members || '', role: team.team_role || 'Member', description: team.description || '' }); setEditingTeam(team); setShowEditTeamModal(true); };
+    const openEditTeam = (team) => { setTeamFormData({ name: team.name, color: team.color || '#e31937', leadId: team.lead_id || '', members: team.members ? JSON.parse(team.members) : [], description: team.description || '' }); setEditingTeam(team); setShowEditTeamModal(true); };
     const handleSaveTeam = async (e) => { e.preventDefault(); const method = editingTeam ? 'PUT' : 'POST'; const url = editingTeam ? `/api/teams/${editingTeam.id}` : '/api/teams'; const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(teamFormData) }); if (r.ok) { fetchTeams(); closeTeamModal(); } };
     const handleDeleteTeam = async (id) => { if (!window.confirm('Delete this team?')) return; const r = await fetch(`/api/teams/${id}`, { method: 'DELETE' }); if (r.ok) fetchTeams(); };
     const closeTeamModal = () => { setShowCreateTeamModal(false); setShowEditTeamModal(false); setEditingTeam(null); };
@@ -782,12 +782,10 @@ function App() {
                                         <option value="">Select a lead</option>
                                         {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                     </select>
-                                    <label>Assign Members (comma-separated names)</label>
-                                    <input className="enterprise-input" placeholder="john, jane, bob" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', e.target.value)} />
-                                    <label>Role</label>
-                                    <select className="enterprise-input" value={teamFormData.role} onChange={e => handleTeamFieldChange('role', e.target.value)}>
-                                        <option value="Lead">Lead</option>
-                                        <option value="Member">Member</option>
+                                    <label>Assign Members</label>
+                                    <select className="enterprise-input" multiple size="6" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', Array.from(e.target.selectedOptions, option => option.value))}>
+                                        <option value="">Select members...</option>
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                     </select>
                                     <label>Description</label>
                                     <textarea className="enterprise-input" rows="4" value={teamFormData.description} onChange={e => handleTeamFieldChange('description', e.target.value)} />
