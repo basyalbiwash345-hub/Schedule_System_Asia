@@ -3,6 +3,7 @@ import Login from './components/Login';
 import Header from './components/Header';
 import './styles/Dashboard.css';
 import MatrixView from './components/MatrixView';
+import './App.css'
 
 const ROTATION_NAME_OPTIONS = [
     'Team-Level',
@@ -505,130 +506,64 @@ function App() {
                     </div>
 
                     {/* ── VIEW USER MODAL ── */}
+                    {/* ── VIEW USER MODAL ── */}
                     {showViewModal && (
                         <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
-                            <div className="enterprise-card"
-                                 style={{minWidth: '520px', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto'}}
-                                 onClick={e => e.stopPropagation()}>
-                                <div style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    marginBottom: '1.5rem'
-                                }}>
-                                    <h2 style={{margin: 0, fontSize: '1.1rem', color: '#111827'}}>User Profile</h2>
-                                    <button onClick={() => setShowViewModal(false)} style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        fontSize: '1.2rem',
-                                        cursor: 'pointer',
-                                        color: '#6b7280'
-                                    }}>✕
-                                    </button>
+                            <div className="modal-content" style={{ minWidth: '550px' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h2 style={{ margin: 0 }}>User Profile Details</h2>
+                                    <button onClick={() => setShowViewModal(false)} className="close-modal-btn">✕</button>
                                 </div>
 
-                                {viewUserError ? (
-                                    <div style={{
-                                        background: '#fee2e2',
-                                        color: '#991b1b',
-                                        padding: '1rem',
-                                        borderRadius: '8px',
-                                        textAlign: 'center',
-                                        fontWeight: 600
-                                    }}>
-                                        ⚠ {viewUserError}
-                                    </div>
-                                ) : viewingUser && (
-                                    <div>
-                                        {/* Avatar + Name Header */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '1.25rem',
-                                            padding: '1.25rem',
-                                            background: '#f9fafb',
-                                            borderRadius: '10px',
-                                            marginBottom: '1.5rem',
-                                            border: '1px solid #e5e7eb'
-                                        }}>
-                                            <div style={{
-                                                width: 64,
-                                                height: 64,
-                                                borderRadius: '50%',
-                                                backgroundColor: '#e31937',
-                                                color: '#fff',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '1.4rem',
-                                                fontWeight: 800,
-                                                flexShrink: 0
-                                            }}>
-                                            {viewingUser.first_name?.charAt(0).toUpperCase()}{viewingUser.last_name?.charAt(0).toUpperCase()}
+                                {viewingUser && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        {/* Full Name Row */}
+                                        <div className="info-box"><label>First Name</label><p>{viewingUser.first_name}</p></div>
+                                        <div className="info-box"><label>Last Name</label><p>{viewingUser.last_name}</p></div>
+
+                                        {/* Contact Row */}
+                                        <div className="info-box"><label>Username</label><p>@{viewingUser.username || '—'}</p></div>
+                                        <div className="info-box"><label>Email</label><p>{viewingUser.email}</p></div>
+
+                                        {/* Secondary Info Row */}
+                                        <div className="info-box"><label>Phone</label><p>{viewingUser.phone || '—'}</p></div>
+                                        <div className="info-box"><label>Location</label><p>{viewingUser.location || '—'}</p></div>
+
+                                        {/* Status and Team Row */}
+                                        <div className="info-box">
+                                            <label>Status</label>
+                                            <span className={`status-pill ${viewingUser.status}`}>{viewingUser.status}</span>
+                                        </div>
+                                        <div className="info-box">
+                                            <label>Assigned Team</label>
+                                            <p>{teams.find(t => t.id === viewingUser.team_id)?.name || 'Unassigned'}</p>
+                                        </div>
+
+                                        {/* Roles Display */}
+                                        <div className="info-box" style={{ gridColumn: 'span 2' }}>
+                                            <label>Assigned Roles</label>
+                                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                                {viewingUser.user_roles?.map(ur => (
+                                                    <span key={ur.role_id} className="role-badge-selected" style={{ fontSize: '0.75rem' }}>
+                                    {ur.roles?.name}
+                                </span>
+                                                ))}
                                             </div>
-                                            <div style={{ flex: 1 }}>
-                                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>{viewingUser.name}</h3>
-                                                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#6b7280' }}>{viewingUser.email}</p>
-                                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                                                    {viewingUser.user_roles?.map(ur => (
-                                                        <span key={ur.role_id} style={{ background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
-                                                            {ur.roles?.name}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <span style={{ background: viewingUser.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: viewingUser.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '4px 12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                                {viewingUser.status}
-                                            </span>
-                                        </div>
-
-                                        {/* Profile Fields */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                                            {[
-                                                { label: 'First Name',     value: viewingUser.first_name },
-                                                { label: 'Last Name',      value: viewingUser.last_name },
-                                                { label: 'Username',       value: viewingUser.username ? `@${viewingUser.username}` : '—' },
-                                                { label: 'Email',          value: viewingUser.email },
-                                                { label: 'Phone',          value: viewingUser.phone || '—' },
-                                                { label: 'Location',       value: viewingUser.location || '—' },
-                                            ].map(field => (
-                                                <div key={field.label} style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6' }}>
-                                                    <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{field.label}</p>
-                                                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>{field.value || '—'}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Assigned Team */}
-                                        {/* Assigned Team */}
-                                        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6', marginBottom: '1.5rem' }}>
-                                            <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Team</p>
-                                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
-                                                {/* Finding the team name from the teams state array using the ID */}
-                                                {teams.find(t => t.id === viewingUser.team_id)?.name || '—'}
-                                            </p>
-                                        </div>
-
-                                        {/* Read-only notice */}
-                                        <p style={{ fontSize: '0.78rem', color: '#9ca3af', textAlign: 'center', margin: '0 0 1rem' }}>
-                                            🔒 Profile is read-only. Click Edit to make changes.
-                                        </p>
-
-                                        {/* Actions */}
-                                        <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                            <button
-                                                onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }}
-                                                className="btn-primary" style={{ flex: 1 }}>
-                                                Edit Profile
-                                            </button>
-                                            <button
-                                                onClick={() => setShowViewModal(false)}
-                                                style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
-                                                Close
-                                            </button>
                                         </div>
                                     </div>
                                 )}
+
+                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                    <button
+                                        onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }}
+                                        className="btn-primary" style={{ flex: 1 }}
+                                    >
+                                        Edit This User
+                                    </button>
+                                    <button onClick={() => setShowViewModal(false)} className="btn-cancel" style={{ flex: 1 }}>
+                                        Close
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
