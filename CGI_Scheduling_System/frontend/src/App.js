@@ -34,6 +34,12 @@ function App() {
     const [showViewModal, setShowViewModal] = useState(false);
     const [viewUserError, setViewUserError] = useState('');
 
+    // Add these with your other User states in App.js
+    const [searchTerm, setSearchTerm] = useState('');
+    const [roleFilter, setRoleFilter] = useState('');
+    const [teamFilter, setTeamFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+
     // Team state
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
     const [showEditTeamModal, setShowEditTeamModal] = useState(false);
@@ -166,34 +172,177 @@ function App() {
 
     const renderPageContent = () => {
         if (activePage === 'Users') {
+            // Filter logic based on your criteria
+            const filteredUsers = users.filter(u => {
+                const matchesSearch =
+                    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase()));
+
+                const matchesTeam = !teamFilter || u.team_id === parseInt(teamFilter);
+                const matchesStatus = !statusFilter || u.status === statusFilter;
+                const matchesRole = !roleFilter || u.user_roles?.some(ur => ur.role_id === parseInt(roleFilter));
+
+                return matchesSearch && matchesTeam && matchesStatus && matchesRole;
+            });
             return (
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2 style={{ margin: 0, color: '#111827' }}>User Management</h2>
                         <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateUser}>+ Create User</button>
                     </div>
+                    {/* ── SEARCH & FILTER BAR ── */}
+                    <div style={{
+                        display: 'flex',
+                        gap: '1rem',
+                        marginBottom: '1.5rem',
+                        alignItems: 'center',
+                        background: '#fff',
+                        padding: '1rem',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb'
+                    }}>
+                        {/* Search Input */}
+                        <div style={{ flex: 2 }}>
+                            <input
+                                type="text"
+                                placeholder="Search name, email, or username..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ ...inputStyle(), marginBottom: 0 }}
+                            />
+                        </div>
+
+                        {/* Team Filter */}
+                        <div style={{ flex: 1 }}>
+                            <select
+                                value={teamFilter}
+                                onChange={(e) => setTeamFilter(e.target.value)}
+                                style={{ ...inputStyle(), marginBottom: 0 }}
+                            >
+                                <option value="">All Teams</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Role Filter */}
+                        <div style={{ flex: 1 }}>
+                            <select
+                                value={roleFilter}
+                                onChange={(e) => setRoleFilter(e.target.value)}
+                                style={{ ...inputStyle(), marginBottom: 0 }}
+                            >
+                                <option value="">All Roles</option>
+                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Status Filter */}
+                        <div style={{ flex: 1 }}>
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                style={{ ...inputStyle(), marginBottom: 0 }}
+                            >
+                                <option value="">All Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
 
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
                             <thead>
-                            <tr><th>Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Location</th><th>Roles</th><th>Status</th><th>Actions</th></tr>
+                            <tr>
+                                <th>First Name</th>
+                                <th>Last Name</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                {/* Column 5 */}
+                                <th>Location</th>
+                                {/* Column 6 */}
+                                <th>Assigned Team</th>
+                                {/* Column 7 */}
+                                <th>Roles</th>
+                                {/* Column 8 */}
+                                <th>Status</th>
+                                {/* Column 9 */}
+                                <th>Actions</th>
+                                {/* Column 10 */}
+                            </tr>
                             </thead>
                             <tbody>
-                            {users.length === 0 ? (
-                                <tr><td colSpan={8} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No users found.</td></tr>
-                            ) : users.map(u => (
+                            {filteredUsers.length === 0 ? (
+                                <tr>
+                                    <td colSpan={10} style={{textAlign: 'center', color: '#9ca3af', padding: '2rem'}}>No
+                                        users found.
+                                    </td>
+                                </tr>
+                            ) : filteredUsers.map(u => (
                                 <tr key={u.id}>
-                                    <td><strong>{u.name}</strong></td>
-                                    <td style={{ color: '#6b7280' }}>{u.username || '—'}</td>
+                                    {/* Displaying First and Last Name separately */}
+                                    <td>{u.first_name}</td>
+                                    <td>{u.last_name}</td>
+
+                                    <td style={{color: '#6b7280'}}>{u.username || '—'}</td>
                                     <td>{u.email}</td>
-                                    <td style={{ color: '#6b7280' }}>{u.phone || '—'}</td>
-                                    <td style={{ color: '#6b7280' }}>{u.location || '—'}</td>
-                                    <td>{u.user_roles?.map(ur => <span key={ur.role_id} style={{ display: 'inline-block', background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, marginRight: '4px' }}>{ur.roles?.name}</span>)}</td>
-                                    <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
+
+                                    {/* ADDED THESE TWO MISSING CELLS TO FIX ALIGNMENT */}
+                                    <td style={{color: '#6b7280'}}>{u.phone || '—'}</td>
+                                    <td style={{color: '#6b7280'}}>{u.location || '—'}</td>
+
+                                    {/* Logic to find the team name from the teams state */}
                                     <td>
-                                        <button onClick={() => openViewUser(u)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
-                                        <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>
-                                        <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>
+                                        {teams.find(t => t.id === u.team_id)?.name || '—'}
+                                    </td>
+
+                                    <td>
+                                        {u.user_roles?.map(ur => (
+                                            <span key={ur.role_id} style={{
+                                                display: 'inline-block',
+                                                background: '#fef2f2',
+                                                color: '#e31937',
+                                                borderRadius: '12px',
+                                                padding: '2px 8px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                marginRight: '4px'
+                                            }}>
+                        {ur.roles?.name}
+                    </span>
+                                        ))}
+                                    </td>
+                                    <td>
+                <span style={{
+                    background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6',
+                    color: u.status === 'active' ? '#065f46' : '#6b7280',
+                    borderRadius: '12px',
+                    padding: '2px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600
+                }}>
+                    {u.status}
+                </span>
+                                    </td>
+                                    <td>
+                                        <button onClick={() => openViewUser(u)} style={{
+                                            marginRight: '0.5rem',
+                                            background: '#f0f9ff',
+                                            color: '#0369a1',
+                                            border: '1px solid #bae6fd',
+                                            borderRadius: '4px',
+                                            padding: '3px 10px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600
+                                        }}>View
+                                        </button>
+                                        <button onClick={() => openEditUser(u)} style={{marginRight: '0.5rem'}}>Edit
+                                        </button>
+                                        <button onClick={() => handleDeleteUser(u)} style={{color: 'red'}}>Delete
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -204,22 +353,64 @@ function App() {
                     {/* ── VIEW USER MODAL ── */}
                     {showViewModal && (
                         <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
-                            <div className="enterprise-card" style={{ minWidth: '520px', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>User Profile</h2>
-                                    <button onClick={() => setShowViewModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
+                            <div className="enterprise-card"
+                                 style={{minWidth: '520px', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto'}}
+                                 onClick={e => e.stopPropagation()}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <h2 style={{margin: 0, fontSize: '1.1rem', color: '#111827'}}>User Profile</h2>
+                                    <button onClick={() => setShowViewModal(false)} style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        fontSize: '1.2rem',
+                                        cursor: 'pointer',
+                                        color: '#6b7280'
+                                    }}>✕
+                                    </button>
                                 </div>
 
                                 {viewUserError ? (
-                                    <div style={{ background: '#fee2e2', color: '#991b1b', padding: '1rem', borderRadius: '8px', textAlign: 'center', fontWeight: 600 }}>
+                                    <div style={{
+                                        background: '#fee2e2',
+                                        color: '#991b1b',
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        textAlign: 'center',
+                                        fontWeight: 600
+                                    }}>
                                         ⚠ {viewUserError}
                                     </div>
                                 ) : viewingUser && (
                                     <div>
                                         {/* Avatar + Name Header */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '1.25rem', background: '#f9fafb', borderRadius: '10px', marginBottom: '1.5rem', border: '1px solid #e5e7eb' }}>
-                                            <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#e31937', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', fontWeight: 800, flexShrink: 0 }}>
-                                                {viewingUser.first_name?.charAt(0).toUpperCase()}{viewingUser.last_name?.charAt(0).toUpperCase()}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '1.25rem',
+                                            padding: '1.25rem',
+                                            background: '#f9fafb',
+                                            borderRadius: '10px',
+                                            marginBottom: '1.5rem',
+                                            border: '1px solid #e5e7eb'
+                                        }}>
+                                            <div style={{
+                                                width: 64,
+                                                height: 64,
+                                                borderRadius: '50%',
+                                                backgroundColor: '#e31937',
+                                                color: '#fff',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '1.4rem',
+                                                fontWeight: 800,
+                                                flexShrink: 0
+                                            }}>
+                                            {viewingUser.first_name?.charAt(0).toUpperCase()}{viewingUser.last_name?.charAt(0).toUpperCase()}
                                             </div>
                                             <div style={{ flex: 1 }}>
                                                 <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>{viewingUser.name}</h3>
@@ -255,9 +446,11 @@ function App() {
                                         </div>
 
                                         {/* Assigned Team */}
+                                        {/* Assigned Team */}
                                         <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '0.75rem 1rem', border: '1px solid #f3f4f6', marginBottom: '1.5rem' }}>
                                             <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Team</p>
                                             <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
+                                                {/* Finding the team name from the teams state array using the ID */}
                                                 {teams.find(t => t.id === viewingUser.team_id)?.name || '—'}
                                             </p>
                                         </div>
