@@ -86,6 +86,10 @@ CREATE TABLE rotations (
                            start_date DATE NOT NULL,
                            interval_unit interval_type NOT NULL,
                            interval_count INT DEFAULT 1,
+                           assigned_member_ids JSONB,
+                           notes TEXT,
+                           allow_double_booking BOOLEAN DEFAULT FALSE,
+                           escalation_tiers JSONB,
                            status status_type DEFAULT 'active',
                            CONSTRAINT check_team_or_location CHECK (
                                (team_id IS NOT NULL AND location_id IS NULL) OR

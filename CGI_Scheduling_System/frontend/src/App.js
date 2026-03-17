@@ -4,10 +4,40 @@ import Header from './components/Header';
 import './styles/Dashboard.css';
 import MatrixView from './components/MatrixView';
 
+const ROTATION_NAME_OPTIONS = [
+    'Team-Level',
+    'Sub-Team',
+    'On-Call',
+    'Business Domain',
+    'Cross-Team Analyst'
+];
+
+const INTERVAL_PRESET_OPTIONS = [
+    { value: 'daily', label: 'Daily', unit: 'day', count: 1 },
+    { value: 'weekly', label: 'Weekly', unit: 'week', count: 1 },
+    { value: 'biweekly', label: 'Bi-Weekly', unit: 'biweek', count: 1 },
+    { value: 'custom', label: 'Custom' }
+];
+
+const INTERVAL_UNIT_OPTIONS = [
+    { value: 'day', label: 'Day(s)' },
+    { value: 'week', label: 'Week(s)' },
+    { value: 'biweek', label: 'Bi-Week(s)' },
+    { value: 'month', label: 'Month(s)' }
+];
+
 const DEFAULT_ROTATION_FORM = {
-    name: '', rotation_type_id: '', team_id: '', location_id: '',
+    name: '',
+    team_id: '',
+    location_id: '',
     start_date: new Date().toISOString().split('T')[0],
-    interval_unit: 'week', interval_count: 1, status: 'active'
+    interval_unit: 'week',
+    interval_count: 1,
+    status: 'active',
+    assigned_member_ids: [],
+    notes: '',
+    allow_double_booking: false,
+    escalation_tiers: ''
 };
 const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: '', role: 'Member', description: '' };
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
@@ -18,7 +48,6 @@ function App() {
     const [roles, setRoles] = useState([]);
     const [locations, setLocations] = useState([]);
     const [rotations, setRotations] = useState([]);
-    const [rotationTypes, setRotationTypes] = useState([]);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
     const [activePage, setActivePage] = useState('Users');
@@ -41,13 +70,17 @@ function App() {
     const [rotationFormData, setRotationFormData] = useState(DEFAULT_ROTATION_FORM);
     const [rotationScope, setRotationScope] = useState('team');
     const [editingRotation, setEditingRotation] = useState(null);
+    const [rotationFormError, setRotationFormError] = useState('');
+    const [rotationFormSuccess, setRotationFormSuccess] = useState('');
+    const [intervalPreset, setIntervalPreset] = useState('weekly');
+    const [rotationNamePreset, setRotationNamePreset] = useState('');
 
     useEffect(() => { closeTeamModal(); }, [activePage]);
 
     useEffect(() => {
         if (isLoggedIn) {
             fetchUsers(); fetchTeams(); fetchRoles(); fetchLocations();
-            if (activePage === 'Rotations') { fetchRotations(); fetchRotationMetadata(); }
+            if (activePage === 'Rotations') { fetchRotations(); }
         }
     }, [isLoggedIn, activePage]);
 
@@ -56,7 +89,12 @@ function App() {
     const fetchRoles = async () => { try { const r = await fetch('/api/roles'); const d = await r.json(); setRoles(Array.isArray(d) ? d : []); } catch { setRoles([]); } };
     const fetchLocations = async () => { try { const r = await fetch('/api/locations'); const d = await r.json(); setLocations(Array.isArray(d) ? d : []); } catch { setLocations([]); } };
     const fetchRotations = async () => { try { const r = await fetch('/api/rotations'); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); } };
-    const fetchRotationMetadata = async () => { try { const [tR, lR] = await Promise.all([fetch('/api/rotation-types'), fetch('/api/locations')]); setRotationTypes(await tR.json()); setLocations(await lR.json()); } catch (e) { console.error(e); } };
+    const inferIntervalPreset = (unit, count) => {
+        if (unit === 'day' && count === 1) return 'daily';
+        if (unit === 'week' && count === 1) return 'weekly';
+        if (unit === 'biweek' && count === 1) return 'biweekly';
+        return 'custom';
+    };
 
     const handleAdminLogin = ({ identifier, password }) => {
         if (identifier === 'admin@cgi.com' && password === 'AdminAdmin902') {
@@ -100,18 +138,134 @@ function App() {
 
     const handleSaveRotation = async (e) => {
         e.preventDefault();
-        const payload = { ...rotationFormData, team_id: rotationScope === 'team' ? rotationFormData.team_id : null, location_id: rotationScope === 'location' ? rotationFormData.location_id : null };
-        const method = editingRotation ? 'PUT' : 'POST'; const url = editingRotation ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
-        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (r.ok) { fetchRotations(); setRotationFormData(DEFAULT_ROTATION_FORM); setEditingRotation(null); alert(editingRotation ? 'Rotation Updated.' : 'Rotation Saved.'); }
+        setRotationFormError('');
+        setRotationFormSuccess('');
+
+        if (!rotationFormData.name.trim()) {
+            setRotationFormError('Rotation name is required.');
+            return;
+        }
+        if (rotationScope === 'team' && !rotationFormData.team_id) {
+            setRotationFormError('Assigned team is required.');
+            return;
+        }
+        if (rotationScope === 'location' && !rotationFormData.location_id) {
+            setRotationFormError('Assigned pool/location is required.');
+            return;
+        }
+        if (!rotationFormData.start_date) {
+            setRotationFormError('Start date is required.');
+            return;
+        }
+
+        const assignedMembers = (rotationFormData.assigned_member_ids || [])
+            .map((id) => String(id))
+            .filter(Boolean);
+        if (!assignedMembers.length) {
+            setRotationFormError('Assign at least one member.');
+            return;
+        }
+
+        const intervalCount = Number.parseInt(rotationFormData.interval_count, 10);
+        if (Number.isNaN(intervalCount) || intervalCount < 1) {
+            setRotationFormError('Rotation interval must be at least 1.');
+            return;
+        }
+
+        const payload = {
+            ...rotationFormData,
+            team_id: rotationScope === 'team' ? rotationFormData.team_id : null,
+            location_id: rotationScope === 'location' ? rotationFormData.location_id : null,
+            assigned_member_ids: assignedMembers
+                .map((id) => Number.parseInt(id, 10))
+                .filter((id) => !Number.isNaN(id)),
+            interval_count: intervalCount
+        };
+
+        const method = editingRotation ? 'PUT' : 'POST';
+        const url = editingRotation ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
+        const r = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            setRotationFormError(
+                Array.isArray(data.errors) ? data.errors.join(' ') : data.error || 'An error occurred.'
+            );
+            return;
+        }
+        setRotationFormSuccess(editingRotation ? 'Rotation updated successfully.' : 'Rotation created successfully.');
+        fetchRotations();
+        setRotationFormData(DEFAULT_ROTATION_FORM);
+        setEditingRotation(null);
+        setRotationScope('team');
+        setIntervalPreset('weekly');
+        setRotationNamePreset('');
+        setTimeout(() => setRotationFormSuccess(''), 1500);
     };
     const handleDeleteRotation = async (id) => { if (!window.confirm('Delete this rotation?')) return; const r = await fetch(`/api/rotations/${id}`, { method: 'DELETE' }); if (r.ok) fetchRotations(); };
-    const openEditRotation = (rotation) => { setEditingRotation(rotation); setRotationScope(rotation.team_id ? 'team' : 'location'); setRotationFormData({ name: rotation.name, rotation_type_id: rotation.rotation_type_id || '', team_id: rotation.team_id || '', location_id: rotation.location_id || '', start_date: rotation.start_date?.split('T')[0] || new Date().toISOString().split('T')[0], interval_unit: rotation.interval_unit || 'week', interval_count: rotation.interval_count || 1, status: rotation.status || 'active' }); };
+    const openEditRotation = (rotation) => {
+        setEditingRotation(rotation);
+        setRotationScope(rotation.team_id ? 'team' : 'location');
+        setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
+        setRotationNamePreset(
+            ROTATION_NAME_OPTIONS.includes(rotation.name) ? rotation.name : 'custom'
+        );
+        setRotationFormError('');
+        setRotationFormSuccess('');
+        setRotationFormData({
+            name: rotation.name || '',
+            team_id: rotation.team_id || '',
+            location_id: rotation.location_id || '',
+            start_date: rotation.start_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+            interval_unit: rotation.interval_unit || 'week',
+            interval_count: rotation.interval_count || 1,
+            status: rotation.status || 'active',
+            assigned_member_ids: Array.isArray(rotation.assigned_member_ids)
+                ? rotation.assigned_member_ids.map((id) => String(id))
+                : [],
+            notes: rotation.notes || '',
+            allow_double_booking: Boolean(rotation.allow_double_booking),
+            escalation_tiers: Array.isArray(rotation.escalation_tiers)
+                ? rotation.escalation_tiers.join(', ')
+                : rotation.escalation_tiers
+                    ? JSON.stringify(rotation.escalation_tiers)
+                    : ''
+        });
+    };
 
     const inputStyle = (field) => ({ width: '100%', padding: '0.65rem 0.75rem', border: `1px solid ${userFormErrors[field] ? '#e31937' : '#d1d5db'}`, borderRadius: '6px', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' });
     const labelStyle = { display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem' };
     const errorStyle = { color: '#e31937', fontSize: '0.78rem', margin: '4px 0 0' };
     const fieldWrap = { marginBottom: '1rem' };
+
+    const userLookup = users.reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+    }, {});
+
+    const formatIntervalLabel = (unit, count) => {
+        const baseLabels = { day: 'Daily', week: 'Weekly', biweek: 'Bi-Weekly', month: 'Monthly' };
+        const base = baseLabels[unit] || unit;
+        if (!count || count === 1) return base;
+        const unitLabel = unit === 'biweek' ? 'bi-week' : unit;
+        return `Every ${count} ${unitLabel}${count > 1 ? 's' : ''}`;
+    };
+
+    const formatCoverageLabel = (rotation) => {
+        const ids = Array.isArray(rotation.assigned_member_ids)
+            ? rotation.assigned_member_ids
+            : [];
+        if (!ids.length) return '—';
+        const names = ids
+            .map((id) => userLookup[id]?.name)
+            .filter(Boolean);
+        if (!names.length) return `${ids.length} member${ids.length > 1 ? 's' : ''}`;
+        if (names.length <= 3) return names.join(', ');
+        return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+    };
 
     const renderPageContent = () => {
         if (activePage === 'Users') {
@@ -320,41 +474,305 @@ function App() {
         }
 
         if (activePage === 'Rotations') {
+            const selectedLocation = locations.find(
+                (l) => String(l.id) === String(rotationFormData.location_id)
+            );
+            const availableMembers =
+                rotationScope === 'team'
+                    ? users.filter((u) => String(u.team_id) === String(rotationFormData.team_id))
+                    : selectedLocation
+                        ? users.filter(
+                            (u) =>
+                                (u.location || '').trim().toLowerCase() ===
+                                selectedLocation.name.trim().toLowerCase()
+                        )
+                        : [];
             return (
                 <div className="grid-container">
                     <div className="enterprise-card">
                         <h3>{editingRotation ? 'Edit Rotation' : 'New Rotation'}</h3>
+                        {rotationFormError && (
+                            <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                                {rotationFormError}
+                            </div>
+                        )}
+                        {rotationFormSuccess && (
+                            <div style={{ background: '#ecfdf5', color: '#065f46', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', fontWeight: 600 }}>
+                                {rotationFormSuccess}
+                            </div>
+                        )}
                         <form onSubmit={handleSaveRotation}>
-                            <input className="enterprise-input" placeholder="Rotation Name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} required />
-                            <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData({ ...rotationFormData, rotation_type_id: e.target.value })} required>
-                                <option value="">Select Type</option>
-                                {rotationTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                            <select className="enterprise-input" value={rotationScope} onChange={e => setRotationScope(e.target.value)}>
-                                <option value="team">Team Scope</option>
-                                <option value="location">Location Scope</option>
-                            </select>
+                            <div className="form-group">
+                                <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
+                                <select
+                                    className="enterprise-input"
+                                    value={rotationNamePreset}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setRotationNamePreset(value);
+                                        if (value === 'custom') {
+                                            setRotationFormData((prev) => ({ ...prev, name: '' }));
+                                        } else {
+                                            setRotationFormData((prev) => ({ ...prev, name: value }));
+                                        }
+                                    }}
+                                    required
+                                >
+                                    <option value="">Select rotation name</option>
+                                    {ROTATION_NAME_OPTIONS.map((name) => (
+                                        <option key={name} value={name}>{name}</option>
+                                    ))}
+                                    <option value="custom">Custom...</option>
+                                </select>
+                                {rotationNamePreset === 'custom' && (
+                                    <input
+                                        className="enterprise-input"
+                                        placeholder="Custom rotation name"
+                                        value={rotationFormData.name}
+                                        onChange={(e) => setRotationFormData({ ...rotationFormData, name: e.target.value })}
+                                        style={{ marginTop: '0.6rem' }}
+                                        required
+                                    />
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Assigned Scope <span style={{ color: '#e31937' }}>*</span></label>
+                                <select
+                                    className="enterprise-input"
+                                    value={rotationScope}
+                                    onChange={(e) => {
+                                        const scope = e.target.value;
+                                        setRotationScope(scope);
+                                        setRotationFormData((prev) => ({
+                                            ...prev,
+                                            team_id: scope === 'team' ? prev.team_id : '',
+                                            location_id: scope === 'location' ? prev.location_id : '',
+                                            assigned_member_ids: []
+                                        }));
+                                    }}
+                                >
+                                    <option value="team">Team / Sub-Team</option>
+                                    <option value="location">Pool (Location)</option>
+                                </select>
+                            </div>
+
                             {rotationScope === 'team' ? (
-                                <select className="enterprise-input" value={rotationFormData.team_id} onChange={e => setRotationFormData({ ...rotationFormData, team_id: e.target.value })} required>
-                                    <option value="">Select Team</option>
-                                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
+                                <div className="form-group">
+                                    <label>Assigned Team / Sub-Team <span style={{ color: '#e31937' }}>*</span></label>
+                                    <select
+                                        className="enterprise-input"
+                                        value={rotationFormData.team_id}
+                                        onChange={(e) =>
+                                            setRotationFormData({
+                                                ...rotationFormData,
+                                                team_id: e.target.value,
+                                                assigned_member_ids: []
+                                            })
+                                        }
+                                        required
+                                    >
+                                        <option value="">Select team</option>
+                                        {teams.map((t) => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             ) : (
-                                <select className="enterprise-input" value={rotationFormData.location_id} onChange={e => setRotationFormData({ ...rotationFormData, location_id: e.target.value })} required>
-                                    <option value="">Select Location</option>
-                                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                                </select>
+                                <div className="form-group">
+                                    <label>Assigned Pool (Location) <span style={{ color: '#e31937' }}>*</span></label>
+                                    <select
+                                        className="enterprise-input"
+                                        value={rotationFormData.location_id}
+                                        onChange={(e) =>
+                                            setRotationFormData({
+                                                ...rotationFormData,
+                                                location_id: e.target.value,
+                                                assigned_member_ids: []
+                                            })
+                                        }
+                                        required
+                                    >
+                                        <option value="">Select pool</option>
+                                        {locations.map((l) => (
+                                            <option key={l.id} value={l.id}>{l.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             )}
+
+                            <div className="form-group">
+                                <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
+                                {availableMembers.length === 0 ? (
+                                    <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
+                                        {rotationScope === 'team'
+                                            ? 'Select a team to load members.'
+                                            : 'Select a pool/location to load members.'}
+                                    </p>
+                                ) : (
+                                    <select
+                                        className="enterprise-input"
+                                        multiple
+                                        size={Math.min(6, availableMembers.length)}
+                                        value={rotationFormData.assigned_member_ids}
+                                        onChange={(e) => {
+                                            const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+                                            setRotationFormData({ ...rotationFormData, assigned_member_ids: values });
+                                        }}
+                                    >
+                                        {availableMembers.map((u) => (
+                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Rotation Interval <span style={{ color: '#e31937' }}>*</span></label>
+                                <select
+                                    className="enterprise-input"
+                                    value={intervalPreset}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setIntervalPreset(value);
+                                        const preset = INTERVAL_PRESET_OPTIONS.find((p) => p.value === value);
+                                        if (preset?.unit) {
+                                            setRotationFormData((prev) => ({
+                                                ...prev,
+                                                interval_unit: preset.unit,
+                                                interval_count: preset.count
+                                            }));
+                                        }
+                                    }}
+                                    required
+                                >
+                                    {INTERVAL_PRESET_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                                {intervalPreset === 'custom' && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.6rem' }}>
+                                        <input
+                                            className="enterprise-input"
+                                            type="number"
+                                            min="1"
+                                            value={rotationFormData.interval_count}
+                                            onChange={(e) => setRotationFormData({ ...rotationFormData, interval_count: e.target.value })}
+                                        />
+                                        <select
+                                            className="enterprise-input"
+                                            value={rotationFormData.interval_unit}
+                                            onChange={(e) => setRotationFormData({ ...rotationFormData, interval_unit: e.target.value })}
+                                        >
+                                            {INTERVAL_UNIT_OPTIONS.map((option) => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Start Date <span style={{ color: '#e31937' }}>*</span></label>
+                                <input
+                                    className="enterprise-input"
+                                    type="date"
+                                    value={rotationFormData.start_date}
+                                    onChange={(e) => setRotationFormData({ ...rotationFormData, start_date: e.target.value })}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Notes / Description</label>
+                                <textarea
+                                    className="enterprise-input"
+                                    rows="3"
+                                    value={rotationFormData.notes}
+                                    onChange={(e) => setRotationFormData({ ...rotationFormData, notes: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Escalation Tiers (optional)</label>
+                                <textarea
+                                    className="enterprise-input"
+                                    rows="2"
+                                    placeholder="Tier 1, Tier 2 or JSON"
+                                    value={rotationFormData.escalation_tiers}
+                                    onChange={(e) => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })}
+                                />
+                                <p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>
+                                    Comma-separated list or JSON array.
+                                </p>
+                            </div>
+
+                            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={rotationFormData.allow_double_booking}
+                                    onChange={(e) => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })}
+                                />
+                                <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking</span>
+                            </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
-                                {editingRotation && <button type="button" onClick={() => { setEditingRotation(null); setRotationFormData(DEFAULT_ROTATION_FORM); }} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
+                                {editingRotation && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setEditingRotation(null);
+                                            setRotationFormData(DEFAULT_ROTATION_FORM);
+                                            setRotationScope('team');
+                                            setIntervalPreset('weekly');
+                                            setRotationNamePreset('');
+                                            setRotationFormError('');
+                                            setRotationFormSuccess('');
+                                        }}
+                                        style={{ background: '#eee', color: '#333' }}
+                                        className="btn-primary"
+                                    >
+                                        Cancel
+                                    </button>
+                                )}
                             </div>
                         </form>
                     </div>
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
-                            <thead><tr><th>Name</th><th>Scope</th><th>Actions</th></tr></thead>
-                            <tbody>{rotations.map(r => (<tr key={r.id}><td><strong>{r.name}</strong></td><td>{r.teams?.name || r.locations?.name || 'N/A'}</td><td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r.id)} style={{ color: 'red' }}>Delete</button></td></tr>))}</tbody>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Scope</th>
+                                    <th>Coverage</th>
+                                    <th>Interval</th>
+                                    <th>Start Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rotations.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                                            No rotations found.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    rotations.map(r => (
+                                        <tr key={r.id}>
+                                            <td><strong>{r.name}</strong></td>
+                                            <td>{r.teams?.name || r.locations?.name || 'N/A'}</td>
+                                            <td>{formatCoverageLabel(r)}</td>
+                                            <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
+                                            <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
+                                            <td>
+                                                <button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button>
+                                                <button onClick={() => handleDeleteRotation(r.id)} style={{ color: 'red' }}>Delete</button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
                         </table>
                     </div>
                 </div>
