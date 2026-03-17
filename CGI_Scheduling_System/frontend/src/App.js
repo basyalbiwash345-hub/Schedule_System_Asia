@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Header from './components/Header';
 import './styles/Dashboard.css';
+import MatrixView from './components/MatrixView';
 
 const DEFAULT_ROTATION_FORM = {
     name: '', rotation_type_id: '', team_id: '', location_id: '',
@@ -359,6 +360,8 @@ function App() {
                 </div>
             );
         }
+
+        if (activePage === 'Matrix') return <MatrixView />;
 
         if (activePage === 'Roles') {
             const rolePermissions = {

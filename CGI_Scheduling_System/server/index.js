@@ -206,7 +206,219 @@ app.delete('/api/rotations/:id', async (req, res) => {
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ── SCHEDULE ──────────────────────────────────────────────────────────────────
+// GET /api/schedule?month=2026-01
+app.get('/api/schedule', async (req, res) => {
+    const { month } = req.query; // e.g. "2026-01"
+    if (!month) return res.status(400).json({ error: 'month query param required (e.g. 2026-01)' });
+    const [year, mon] = month.split('-').map(Number);
+    const start = new Date(year, mon - 1, 1);
+    const end   = new Date(year, mon, 0, 23, 59, 59);
+    try {
+        const entries = await prisma.rotation_assignments.findMany({
+            where: { start_time: { gte: start, lte: end } },
+            include: { users: { select: { id: true, name: true } } },
+            orderBy: { start_time: 'asc' }
+        });
+        // Return as { userId_date: { id, user_id, code, date } }
+        const result = entries.map(e => ({
+            id: e.id,
+            user_id: e.user_id,
+            date: e.start_time.toISOString().split('T')[0],
+            code: e.status_code,
+        }));
+        res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/schedule — upsert a code for a user/date
+app.put('/api/schedule', async (req, res) => {
+    const { user_id, date, code } = req.body;
+    if (!user_id || !date || !code) return res.status(400).json({ error: 'user_id, date, and code are required.' });
+    const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd   = new Date(date + 'T23:59:59.999Z');
+    try {
+        // Check if entry already exists for this user/date
+        const existing = await prisma.rotation_assignments.findFirst({
+            where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } }
+        });
+        let entry;
+        if (existing) {
+            entry = await prisma.rotation_assignments.update({
+                where: { id: existing.id },
+                data: { status_code: code }
+            });
+        } else {
+            entry = await prisma.rotation_assignments.create({
+                data: {
+                    user_id: Number(user_id),
+                    start_time: dayStart,
+                    end_time: dayEnd,
+                    status_code: code,
+                    status: 'scheduled',
+                    slot: 'full',
+                }
+            });
+        }
+        res.json({ id: entry.id, user_id: entry.user_id, date, code: entry.status_code });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/schedule/:id — clear a cell
+app.delete('/api/schedule/:id', async (req, res) => {
+    try {
+        await prisma.rotation_assignments.delete({ where: { id: parseInt(req.params.id) } });
+        res.json({ message: 'Schedule entry deleted' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/matrix-users — users with their team for the matrix
+app.get('/api/matrix-users', async (req, res) => {
+    try {
+        const users = await prisma.users.findMany({
+            where: { status: 'active' },
+            orderBy: [{ team_id: 'asc' }, { name: 'asc' }],
+            select: { id: true, name: true, team_id: true }
+        });
+        const teams = await prisma.teams.findMany({ select: { id: true, name: true, color: true } });
+        const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
+        const result = users.map(u => ({
+            id: u.id,
+            name: u.name,
+            team_id: u.team_id,
+            team_name: u.team_id ? (teamMap[u.team_id]?.name || 'Unknown Team') : 'Unassigned',
+            team_color: u.team_id ? (teamMap[u.team_id]?.color || '#6b7280') : '#6b7280',
+        }));
+        res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── STARTUP ROLE SEED
+
+const seedExcelData = async () => {
+    const userCount = await prisma.users.count();
+    if (userCount > 0) return; // already seeded
+
+    // Create teams from Excel
+    const teamNames = [
+        { name: 'CDO FDN Subsurface and Land', color: '#e31937' },
+        { name: 'CDO FDN Business Services',   color: '#2563eb' },
+        { name: 'CDO FDN Ops App Support',     color: '#059669' },
+        { name: 'CDO FDN Custom App Support',  color: '#7c3aed' },
+        { name: 'ServiceNow',                   color: '#d97706' },
+        { name: 'IT Apps',                      color: '#db2777' },
+        { name: 'Platforms',                    color: '#0891b2' },
+        { name: 'Service Desk',                 color: '#65a30d' },
+        { name: 'Lead',                         color: '#dc2626' },
+        { name: 'ALM',                          color: '#0284c7' },
+        { name: 'MMF/EHS/Reserves/IT+/Incident',color: '#16a34a' },
+        { name: 'SNOW, UIPath, PF',             color: '#9333ea' },
+        { name: 'IT PCO',                       color: '#ca8a04' },
+        { name: 'IT BA',                        color: '#0f766e' },
+        { name: 'CDO PCO',                      color: '#b45309' },
+        { name: 'Change',                       color: '#4338ca' },
+        { name: 'Developer',                    color: '#be123c' },
+        { name: 'SDM',                          color: '#0369a1' },
+    ];
+
+    const createdTeams = {};
+    for (const t of teamNames) {
+        let team = await prisma.teams.findFirst({ where: { name: t.name } });
+        if (!team) {
+            team = await prisma.teams.create({
+                data: { name: t.name, color: t.color, status: 'active' }
+            });
+        }
+        createdTeams[t.name] = team.id;
+    }
+
+    // Get employee role id
+    const employeeRole = await prisma.roles.findFirst({ where: { name: 'Employee' } });
+
+    // Seed employees from Excel
+    const employees = [
+        { name: 'Dan Saulnier',            team: 'CDO FDN Subsurface and Land' },
+        { name: 'Alan Howatt',             team: 'CDO FDN Subsurface and Land' },
+        { name: 'John Doucette',           team: 'CDO FDN Subsurface and Land' },
+        { name: 'Ameera Barowalia',        team: 'CDO FDN Subsurface and Land' },
+        { name: 'Travis Torraville',       team: 'CDO FDN Subsurface and Land' },
+        { name: 'Ryan Praught',            team: 'CDO FDN Subsurface and Land' },
+        { name: 'Sayedun Asma',            team: 'CDO FDN Business Services'   },
+        { name: 'Ricky Dalton',            team: 'CDO FDN Business Services'   },
+        { name: 'Simran Chopra',           team: 'CDO FDN Business Services'   },
+        { name: 'Kakoli Majumder',         team: 'CDO FDN Business Services'   },
+        { name: 'Nick Matheson',           team: 'CDO FDN Business Services'   },
+        { name: 'David Judson',            team: 'CDO FDN Business Services'   },
+        { name: 'Shane Graves',            team: 'CDO FDN Business Services'   },
+        { name: 'Neil Weber',              team: 'CDO FDN Business Services'   },
+        { name: 'Rick Hamer',              team: 'CDO FDN Ops App Support'     },
+        { name: 'Edith Larkin',            team: 'CDO FDN Ops App Support'     },
+        { name: 'Abdul-Malik Olanrewaju',  team: 'CDO FDN Ops App Support'     },
+        { name: 'Veronique Breault',       team: 'CDO FDN Ops App Support'     },
+        { name: 'JD Green',               team: 'CDO FDN Ops App Support'     },
+        { name: 'Ryan McGuigan',           team: 'CDO FDN Ops App Support'     },
+        { name: 'Kevin McPhee',            team: 'CDO FDN Ops App Support'     },
+        { name: 'Monica Duddela',          team: 'CDO FDN Custom App Support'  },
+        { name: 'Darren Nickerson',        team: 'CDO FDN Custom App Support'  },
+        { name: 'Kyle Creamer',            team: 'CDO FDN Custom App Support'  },
+        { name: 'Tim Darrach',             team: 'ServiceNow'                  },
+        { name: 'Leon Tarabukin',          team: 'ServiceNow'                  },
+        { name: 'Karthik Rajakrishnan',    team: 'ServiceNow'                  },
+        { name: 'Rishi Akella',            team: 'IT Apps'                     },
+        { name: 'Ronak Shah',              team: 'IT Apps'                     },
+        { name: 'Neil Bridges',            team: 'IT Apps'                     },
+        { name: 'Dan MacFarlane',          team: 'Platforms'                   },
+        { name: 'Sajith Manuel',           team: 'Platforms'                   },
+        { name: 'Yogdeep Singh',           team: 'Platforms'                   },
+        { name: 'Jesse Ford',              team: 'Platforms'                   },
+        { name: 'Courtney Gaudet',         team: 'Platforms'                   },
+        { name: 'Logan Noonan',            team: 'Platforms'                   },
+        { name: 'Mahaveer Chaudhari',      team: 'Service Desk'                },
+        { name: 'Ance Mathew',             team: 'Service Desk'                },
+        { name: 'Kristeph Small',          team: 'Service Desk'                },
+        { name: 'Heli Soni',              team: 'Service Desk'                },
+        { name: 'Mario Cormier',           team: 'Service Desk'                },
+        { name: 'Mahshid Pouransafar',     team: 'Service Desk'                },
+        { name: 'Aaron Cole',              team: 'Service Desk'                },
+        { name: 'Mike Thomson',            team: 'Lead'                        },
+        { name: 'Matt Burns',              team: 'Lead'                        },
+        { name: 'Matej Hanzl',            team: 'ALM'                         },
+        { name: 'Jeff Lee',               team: 'MMF/EHS/Reserves/IT+/Incident'},
+        { name: 'Nicole Duplessis',        team: 'SNOW, UIPath, PF'            },
+        { name: 'Angele Easter',           team: 'IT PCO'                      },
+        { name: 'Rona Stewart',            team: 'IT PCO'                      },
+        { name: 'Chloe Risk',             team: 'IT BA'                       },
+        { name: 'Julie McCracken',         team: 'CDO PCO'                     },
+        { name: 'Jennifer Gallant',        team: 'Change'                      },
+        { name: 'Brett Cheverie',          team: 'Developer'                   },
+        { name: 'Matthew Densmore',        team: 'SDM'                         },
+    ];
+
+    for (const emp of employees) {
+        const nameParts = emp.name.split(' ');
+        const first_name = nameParts[0];
+        const last_name = nameParts.slice(1).join(' ') || 'Unknown';
+        const username = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) + Math.floor(Math.random()*99);
+        const email = username + '@cgi.com';
+        const teamId = createdTeams[emp.team];
+        try {
+            const user = await prisma.users.create({
+                data: {
+                    first_name, last_name, name: emp.name,
+                    username, email,
+                    password_hash: 'TempPass1!',
+                    team_id: teamId || null,
+                    must_change_password: true,
+                    status: 'active',
+                    ...(employeeRole ? { user_roles: { create: [{ role_id: employeeRole.id }] } } : {})
+                }
+            });
+        } catch(e) { /* skip duplicates */ }
+    }
+    console.log('Excel employees seeded.');
+};
+
 const seedRoles = async () => {
     const count = await prisma.roles.count();
     if (count === 0) {
@@ -225,4 +437,5 @@ const seedRoles = async () => {
 app.listen(port, async () => {
     console.log('CGI Scheduling Server live on http://localhost:' + port);
     await seedRoles();
+    await seedExcelData();
 });

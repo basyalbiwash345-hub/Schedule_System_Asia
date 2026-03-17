@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-    AppBar, Toolbar, Box, Button, IconButton, InputBase,
-    Avatar, Typography, Chip, Menu, MenuItem, Divider
+    AppBar, Toolbar, Box, Button, InputBase,
+    Avatar, Typography, Menu, MenuItem, Divider, IconButton
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -10,23 +10,25 @@ import {
     Person as PersonIcon,
     RotateRight as RotateIcon,
     AdminPanelSettings as RolesIcon,
+    GridOn as GridOnIcon,
     Logout as LogoutIcon,
-    KeyboardArrowDown as ArrowDownIcon
+    KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material';
 
 const NAV_ITEMS = [
-    { label: 'Overview', page: 'Overview', icon: <DashboardIcon fontSize="small" /> },
-    { label: 'Teams', page: 'Teams', icon: <GroupIcon fontSize="small" /> },
+    { label: 'Overview',  page: 'Overview', icon: <DashboardIcon fontSize="small" /> },
+    { label: 'Matrix',    page: 'Matrix',   icon: <GridOnIcon fontSize="small" /> },
+    { label: 'Teams',     page: 'Teams',    icon: <GroupIcon fontSize="small" /> },
 ];
 
 const ADMIN_NAV_ITEMS = [
-    { label: 'Users', page: 'Users', icon: <PersonIcon fontSize="small" /> },
+    { label: 'Users',     page: 'Users',     icon: <PersonIcon fontSize="small" /> },
     { label: 'Rotations', page: 'Rotations', icon: <RotateIcon fontSize="small" /> },
-    { label: 'Roles', page: 'Roles', icon: <RolesIcon fontSize="small" /> },
+    { label: 'Roles',     page: 'Roles',     icon: <RolesIcon fontSize="small" /> },
 ];
 
 const Header = ({ user, onLogout, activePage, onNavigate }) => {
-    const isAdmin = user?.role === "Administrators" || user?.role === "Admin";
+    const isAdmin = user?.role === 'Administrators' || user?.role === 'Admin';
     const [anchorEl, setAnchorEl] = useState(null);
     const allNavItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 
@@ -34,24 +36,19 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
         <AppBar position="sticky" elevation={0} sx={{
             backgroundColor: '#ffffff',
             borderBottom: '1px solid #e5e7eb',
-            color: '#111827'
+            color: '#111827',
         }}>
             <Toolbar sx={{ gap: 2, minHeight: '64px !important' }}>
 
                 {/* Logo */}
                 <Box
-                    onClick={() => onNavigate("Overview")}
+                    onClick={() => onNavigate('Overview')}
                     sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', mr: 2, flexShrink: 0 }}
                 >
                     <Box sx={{
-                        backgroundColor: '#e31937',
-                        color: 'white',
-                        px: 1,
-                        py: 0.5,
-                        fontWeight: 800,
-                        borderRadius: '4px',
-                        fontSize: '0.95rem',
-                        letterSpacing: '0.05em'
+                        backgroundColor: '#e31937', color: 'white',
+                        px: 1, py: 0.5, fontWeight: 800, borderRadius: '4px',
+                        fontSize: '0.95rem', letterSpacing: '0.05em',
                     }}>
                         CGI
                     </Box>
@@ -59,7 +56,8 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                         <Typography variant="body2" fontWeight={700} lineHeight={1.2} color="#111827">
                             Scheduling
                         </Typography>
-                        <Typography variant="caption" color="#6b7280" sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.6rem' }}>
+                        <Typography variant="caption" color="#6b7280"
+                                    sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.6rem' }}>
                             Enterprise System
                         </Typography>
                     </Box>
@@ -78,15 +76,11 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                                 backgroundColor: activePage === page ? '#fef2f2' : 'transparent',
                                 borderBottom: activePage === page ? '2px solid #e31937' : '2px solid transparent',
                                 borderRadius: '4px 4px 0 0',
-                                px: 1.5,
-                                py: 1,
+                                px: 1.5, py: 1,
                                 fontWeight: activePage === page ? 600 : 400,
                                 fontSize: '0.85rem',
                                 textTransform: 'none',
-                                '&:hover': {
-                                    backgroundColor: '#fef2f2',
-                                    color: '#e31937'
-                                }
+                                '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' },
                             }}
                         >
                             {label}
@@ -95,26 +89,13 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                 </Box>
 
                 {/* Search */}
-                <Box sx={{
-                    flexGrow: 1,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    px: 2
-                }}>
+                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', px: 2 }}>
                     <Box sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        px: 2,
-                        py: 0.5,
-                        width: '100%',
-                        maxWidth: 400,
-                        '&:focus-within': {
-                            borderColor: '#e31937',
-                            backgroundColor: '#fff'
-                        }
+                        display: 'flex', alignItems: 'center',
+                        backgroundColor: '#f9fafb', border: '1px solid #e5e7eb',
+                        borderRadius: '8px', px: 2, py: 0.5,
+                        width: '100%', maxWidth: 400,
+                        '&:focus-within': { borderColor: '#e31937', backgroundColor: '#fff' },
                     }}>
                         <SearchIcon sx={{ color: '#9ca3af', fontSize: '1.1rem', mr: 1 }} />
                         <InputBase
@@ -128,16 +109,10 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                 <Box
                     onClick={(e) => setAnchorEl(e.currentTarget)}
                     sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        cursor: 'pointer',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        px: 1.5,
-                        py: 0.75,
-                        flexShrink: 0,
-                        '&:hover': { backgroundColor: '#f9fafb' }
+                        display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer',
+                        border: '1px solid #e5e7eb', borderRadius: '8px',
+                        px: 1.5, py: 0.75, flexShrink: 0,
+                        '&:hover': { backgroundColor: '#f9fafb' },
                     }}
                 >
                     <Avatar sx={{ width: 28, height: 28, backgroundColor: '#e31937', fontSize: '0.75rem' }}>
@@ -158,14 +133,23 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                     anchorEl={anchorEl}
                     open={Boolean(anchorEl)}
                     onClose={() => setAnchorEl(null)}
-                    PaperProps={{ sx: { mt: 1, minWidth: 160, borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' } }}
+                    PaperProps={{
+                        sx: {
+                            mt: 1, minWidth: 160, borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        },
+                    }}
                 >
                     <Box sx={{ px: 2, py: 1 }}>
                         <Typography variant="body2" fontWeight={600}>{user?.name}</Typography>
                         <Typography variant="caption" color="#6b7280">{user?.email}</Typography>
                     </Box>
                     <Divider />
-                    <MenuItem onClick={() => { setAnchorEl(null); onLogout(); }} sx={{ color: '#e31937', gap: 1, fontSize: '0.875rem' }}>
+                    <MenuItem
+                        onClick={() => { setAnchorEl(null); onLogout(); }}
+                        sx={{ color: '#e31937', gap: 1, fontSize: '0.875rem' }}
+                    >
                         <LogoutIcon fontSize="small" />
                         Log out
                     </MenuItem>
