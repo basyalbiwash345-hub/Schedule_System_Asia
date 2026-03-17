@@ -25,6 +25,11 @@ const parseRequiredDate = (value) => {
 
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+const validatePhone = (phone) => {
+    if (!phone) return true;
+    return /^[+]?[\d\s\-().]{7,20}$/.test(phone);
+};
+
 const validatePassword = (password) => {
     const errors = [];
     if (!password || password.length < 8) errors.push('Password must be at least 8 characters.');
@@ -47,7 +52,19 @@ const validateUserPayload = (body, isUpdate = false) => {
         else { const pwErrors = validatePassword(body.password); if (pwErrors.length) errors.password = pwErrors.join(' '); }
         if (!body.roles || body.roles.length === 0) errors.roles = 'At least one role is required.';
     } else {
-        if (body.email && !validateEmail(body.email)) errors.email = 'Email format is invalid.';
+        // Edit mode — validate fields that were provided
+        if (body.first_name !== undefined && !body.first_name?.trim()) errors.first_name = 'First name cannot be empty.';
+        if (body.last_name !== undefined && !body.last_name?.trim()) errors.last_name = 'Last name cannot be empty.';
+        if (body.username !== undefined && !body.username?.trim()) errors.username = 'Username cannot be empty.';
+        if (body.email !== undefined) {
+            if (!body.email?.trim()) errors.email = 'Email cannot be empty.';
+            else if (!validateEmail(body.email)) errors.email = 'Email format is invalid.';
+        }
+        if (body.roles !== undefined && body.roles.length === 0) errors.roles = 'At least one role is required.';
+    }
+    // Phone validation applies to both create and edit
+    if (body.phone && !validatePhone(body.phone)) {
+        errors.phone = 'Phone format is invalid. Use format: +1 (555) 000-0000';
     }
     return errors;
 };
@@ -98,7 +115,10 @@ app.post('/api/users', async (req, res) => {
         if (existingUsername) return res.status(400).json({ errors: { username: 'Username is already taken.' } });
         const roleRecords = await prisma.roles.findMany({ where: { id: { in: roles.map(Number) } } });
         if (roleRecords.length !== roles.length) return res.status(400).json({ errors: { roles: 'One or more selected roles are invalid.' } });
-        if (team_id) { const team = await prisma.teams.findUnique({ where: { id: Number(team_id) } }); if (!team) return res.status(400).json({ errors: { team_id: 'Selected team is invalid.' } }); }
+        if (team_id) {
+            const team = await prisma.teams.findUnique({ where: { id: Number(team_id) } });
+            if (!team) return res.status(400).json({ errors: { team_id: 'Selected team is invalid.' } });
+        }
         const fullName = `${first_name.trim()} ${last_name.trim()}`;
         const newUser = await prisma.users.create({
             data: { first_name: first_name.trim(), last_name: last_name.trim(), name: fullName, username: username.trim(), email: email.trim().toLowerCase(), password_hash: password, phone: phone?.trim() || null, location: location?.trim() || null, team_id: team_id ? Number(team_id) : null, must_change_password: true, status: 'active', user_roles: { create: roles.map(roleId => ({ role_id: Number(roleId) })) } },
@@ -117,8 +137,31 @@ app.put('/api/users/:id', async (req, res) => {
     try {
         const existing = await prisma.users.findUnique({ where: { id: userId } });
         if (!existing) return res.status(404).json({ error: 'User not found.' });
-        if (email) { const conflict = await prisma.users.findFirst({ where: { email, NOT: { id: userId } } }); if (conflict) return res.status(400).json({ errors: { email: 'Email is already in use.' } }); }
-        if (username) { const conflict = await prisma.users.findFirst({ where: { username, NOT: { id: userId } } }); if (conflict) return res.status(400).json({ errors: { username: 'Username is already taken.' } }); }
+
+        // Uniqueness checks
+        if (email) {
+            const conflict = await prisma.users.findFirst({ where: { email, NOT: { id: userId } } });
+            if (conflict) return res.status(400).json({ errors: { email: 'Email is already in use.' } });
+        }
+        if (username) {
+            const conflict = await prisma.users.findFirst({ where: { username, NOT: { id: userId } } });
+            if (conflict) return res.status(400).json({ errors: { username: 'Username is already taken.' } });
+        }
+
+        // Validate roles if provided
+        if (roles && roles.length > 0) {
+            const roleRecords = await prisma.roles.findMany({ where: { id: { in: roles.map(Number) } } });
+            if (roleRecords.length !== roles.length) {
+                return res.status(400).json({ errors: { roles: 'One or more selected roles are invalid.' } });
+            }
+        }
+
+        // Validate team if provided
+        if (team_id) {
+            const team = await prisma.teams.findUnique({ where: { id: Number(team_id) } });
+            if (!team) return res.status(400).json({ errors: { team_id: 'Selected team is invalid.' } });
+        }
+
         const updateData = {};
         if (first_name) updateData.first_name = first_name.trim();
         if (last_name) updateData.last_name = last_name.trim();
@@ -128,9 +171,15 @@ app.put('/api/users/:id', async (req, res) => {
         if (phone !== undefined) updateData.phone = phone?.trim() || null;
         if (location !== undefined) updateData.location = location?.trim() || null;
         if (team_id !== undefined) updateData.team_id = team_id ? Number(team_id) : null;
+
         const updatedUser = await prisma.users.update({
             where: { id: userId },
-            data: { ...updateData, ...(roles && roles.length > 0 ? { user_roles: { deleteMany: {}, create: roles.map(roleId => ({ role_id: Number(roleId) })) } } : {}) },
+            data: {
+                ...updateData,
+                ...(roles && roles.length > 0 ? {
+                    user_roles: { deleteMany: {}, create: roles.map(roleId => ({ role_id: Number(roleId) })) }
+                } : {})
+            },
             include: { user_roles: { include: { roles: true } } }
         });
         await logAction(null, 'UPDATE_USER', 'users', userId, existing, updatedUser);
@@ -141,8 +190,31 @@ app.put('/api/users/:id', async (req, res) => {
 app.delete('/api/users/:id', async (req, res) => {
     const userId = parseInt(req.params.id);
     try {
-        const existing = await prisma.users.findUnique({ where: { id: userId } });
+        const existing = await prisma.users.findUnique({
+            where: { id: userId },
+            include: { user_roles: { include: { roles: true } } }
+        });
         if (!existing) return res.status(404).json({ error: 'User not found.' });
+
+        // Block if user is the only Administrator
+        const isAdmin = existing.user_roles.some(ur => ur.roles.name === 'Administrator');
+        if (isAdmin) {
+            const adminCount = await prisma.user_roles.count({
+                where: { roles: { name: 'Administrator' } }
+            });
+            if (adminCount <= 1) {
+                return res.status(400).json({ error: 'Cannot delete the only Administrator in the system. Assign another Administrator first.' });
+            }
+        }
+
+        // Block if user has active rotation assignments
+        const activeAssignments = await prisma.rotation_assignments.count({
+            where: { user_id: userId, status: 'scheduled', end_time: { gte: new Date() } }
+        });
+        if (activeAssignments > 0) {
+            return res.status(400).json({ error: `Cannot delete user with ${activeAssignments} active shift assignment(s). Please reassign or cancel their shifts first.` });
+        }
+
         await prisma.users.delete({ where: { id: userId } });
         await logAction(null, 'DELETE_USER', 'users', userId, existing, null);
         res.json({ message: 'User deleted successfully' });
@@ -206,11 +278,9 @@ app.delete('/api/rotations/:id', async (req, res) => {
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-// GET /api/schedule?month=2026-01
 app.get('/api/schedule', async (req, res) => {
-    const { month } = req.query; // e.g. "2026-01"
+    const { month } = req.query;
     if (!month) return res.status(400).json({ error: 'month query param required (e.g. 2026-01)' });
     const [year, mon] = month.split('-').map(Number);
     const start = new Date(year, mon - 1, 1);
@@ -221,10 +291,8 @@ app.get('/api/schedule', async (req, res) => {
             include: { users: { select: { id: true, name: true } } },
             orderBy: { start_time: 'asc' }
         });
-        // Return as { userId_date: { id, user_id, code, date } }
         const result = entries.map(e => ({
-            id: e.id,
-            user_id: e.user_id,
+            id: e.id, user_id: e.user_id,
             date: e.start_time.toISOString().split('T')[0],
             code: e.status_code,
         }));
@@ -232,40 +300,27 @@ app.get('/api/schedule', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/schedule — upsert a code for a user/date
 app.put('/api/schedule', async (req, res) => {
     const { user_id, date, code } = req.body;
     if (!user_id || !date || !code) return res.status(400).json({ error: 'user_id, date, and code are required.' });
     const dayStart = new Date(date + 'T00:00:00.000Z');
     const dayEnd   = new Date(date + 'T23:59:59.999Z');
     try {
-        // Check if entry already exists for this user/date
         const existing = await prisma.rotation_assignments.findFirst({
             where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } }
         });
         let entry;
         if (existing) {
-            entry = await prisma.rotation_assignments.update({
-                where: { id: existing.id },
-                data: { status_code: code }
-            });
+            entry = await prisma.rotation_assignments.update({ where: { id: existing.id }, data: { status_code: code } });
         } else {
             entry = await prisma.rotation_assignments.create({
-                data: {
-                    user_id: Number(user_id),
-                    start_time: dayStart,
-                    end_time: dayEnd,
-                    status_code: code,
-                    status: 'scheduled',
-                    slot: 'full',
-                }
+                data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code, status: 'scheduled', slot: 'full' }
             });
         }
         res.json({ id: entry.id, user_id: entry.user_id, date, code: entry.status_code });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/schedule/:id — clear a cell
 app.delete('/api/schedule/:id', async (req, res) => {
     try {
         await prisma.rotation_assignments.delete({ where: { id: parseInt(req.params.id) } });
@@ -273,7 +328,6 @@ app.delete('/api/schedule/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/matrix-users — users with their team for the matrix
 app.get('/api/matrix-users', async (req, res) => {
     try {
         const users = await prisma.users.findMany({
@@ -284,9 +338,7 @@ app.get('/api/matrix-users', async (req, res) => {
         const teams = await prisma.teams.findMany({ select: { id: true, name: true, color: true } });
         const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
         const result = users.map(u => ({
-            id: u.id,
-            name: u.name,
-            team_id: u.team_id,
+            id: u.id, name: u.name, team_id: u.team_id,
             team_name: u.team_id ? (teamMap[u.team_id]?.name || 'Unknown Team') : 'Unassigned',
             team_color: u.team_id ? (teamMap[u.team_id]?.color || '#6b7280') : '#6b7280',
         }));
@@ -294,13 +346,11 @@ app.get('/api/matrix-users', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── STARTUP ROLE SEED
-
+// ── SEED ──────────────────────────────────────────────────────────────────────
 const seedExcelData = async () => {
     const userCount = await prisma.users.count();
-    if (userCount > 0) return; // already seeded
+    if (userCount > 0) return;
 
-    // Create teams from Excel
     const teamNames = [
         { name: 'CDO FDN Subsurface and Land', color: '#e31937' },
         { name: 'CDO FDN Business Services',   color: '#2563eb' },
@@ -326,17 +376,13 @@ const seedExcelData = async () => {
     for (const t of teamNames) {
         let team = await prisma.teams.findFirst({ where: { name: t.name } });
         if (!team) {
-            team = await prisma.teams.create({
-                data: { name: t.name, color: t.color, status: 'active' }
-            });
+            team = await prisma.teams.create({ data: { name: t.name, color: t.color, status: 'active' } });
         }
         createdTeams[t.name] = team.id;
     }
 
-    // Get employee role id
     const employeeRole = await prisma.roles.findFirst({ where: { name: 'Employee' } });
 
-    // Seed employees from Excel
     const employees = [
         { name: 'Dan Saulnier',            team: 'CDO FDN Subsurface and Land' },
         { name: 'Alan Howatt',             team: 'CDO FDN Subsurface and Land' },
@@ -399,11 +445,11 @@ const seedExcelData = async () => {
         const nameParts = emp.name.split(' ');
         const first_name = nameParts[0];
         const last_name = nameParts.slice(1).join(' ') || 'Unknown';
-        const username = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) + Math.floor(Math.random()*99);
+        const username = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) + Math.floor(Math.random() * 99);
         const email = username + '@cgi.com';
         const teamId = createdTeams[emp.team];
         try {
-            const user = await prisma.users.create({
+            await prisma.users.create({
                 data: {
                     first_name, last_name, name: emp.name,
                     username, email,
@@ -414,7 +460,7 @@ const seedExcelData = async () => {
                     ...(employeeRole ? { user_roles: { create: [{ role_id: employeeRole.id }] } } : {})
                 }
             });
-        } catch(e) { /* skip duplicates */ }
+        } catch (e) { /* skip duplicates */ }
     }
     console.log('Excel employees seeded.');
 };
@@ -424,10 +470,10 @@ const seedRoles = async () => {
     if (count === 0) {
         await prisma.roles.createMany({
             data: [
-                { name: 'Administrator', description: 'Full system access including user and role management.' },
+                { name: 'Administrator',          description: 'Full system access including user and role management.' },
                 { name: 'Team Lead / Supervisor', description: 'Manage team members, approve leave requests, and oversee schedules.' },
-                { name: 'Rotation Owner', description: 'Create and manage rotation schedules.' },
-                { name: 'Employee', description: 'View personal schedule and submit leave requests.' },
+                { name: 'Rotation Owner',         description: 'Create and manage rotation schedules.' },
+                { name: 'Employee',               description: 'View personal schedule and submit leave requests.' },
             ]
         });
         console.log('Roles seeded.');

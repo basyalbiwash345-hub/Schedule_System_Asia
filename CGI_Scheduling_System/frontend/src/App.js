@@ -42,6 +42,10 @@ function App() {
     const [rotationScope, setRotationScope] = useState('team');
     const [editingRotation, setEditingRotation] = useState(null);
 
+    // Delete confirmation state
+    const [deleteConfirm, setDeleteConfirm] = useState({ open: false, user: null });
+    const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+
     useEffect(() => { closeTeamModal(); }, [activePage]);
 
     useEffect(() => {
@@ -89,7 +93,31 @@ function App() {
         } catch { setUserFormErrors({ general: 'Network error. Please try again.' }); }
     };
 
-    const handleDeleteUser = async (id) => { if (!window.confirm('Delete this user?')) return; const r = await fetch(`/api/users/${id}`, { method: 'DELETE' }); if (r.ok) fetchUsers(); };
+    const showNotification = (message, type = 'success') => {
+        setNotification({ show: true, message, type });
+        setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
+    };
+
+    const handleDeleteUser = (user) => {
+        setDeleteConfirm({ open: true, user });
+    };
+
+    const handleConfirmDelete = async () => {
+        const user = deleteConfirm.user;
+        setDeleteConfirm({ open: false, user: null });
+        try {
+            const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                fetchUsers();
+                showNotification('User deleted successfully.');
+            } else {
+                showNotification(data.error || 'Failed to delete user.', 'error');
+            }
+        } catch {
+            showNotification('Network error. Please try again.', 'error');
+        }
+    };
 
     const handleTeamFieldChange = (field, value) => setTeamFormData(prev => ({ ...prev, [field]: value }));
     const openCreateTeam = () => { setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); };
@@ -141,7 +169,7 @@ function App() {
                                     <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
                                     <td>
                                         <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>
-                                        <button onClick={() => handleDeleteUser(u.id)} style={{ color: 'red' }}>Delete</button>
+                                        <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>
                                     </td>
                                 </tr>
                             ))}
@@ -434,8 +462,55 @@ function App() {
 
     if (!isLoggedIn) return <Login onLogin={handleAdminLogin} />;
 
+    const NotificationBanner = () => notification.show ? (
+        <div style={{
+            position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999,
+            background: notification.type === 'success' ? '#ecfdf5' : '#fee2e2',
+            color: notification.type === 'success' ? '#065f46' : '#991b1b',
+            border: `1px solid ${notification.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+            borderRadius: '8px', padding: '0.85rem 1.25rem',
+            fontWeight: 600, fontSize: '0.875rem',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            display: 'flex', alignItems: 'center', gap: '0.5rem', maxWidth: '360px',
+        }}>
+            <span>{notification.type === 'success' ? '✓' : '✕'}</span>
+            {notification.message}
+        </div>
+    ) : null;
+
+    const DeleteConfirmModal = () => !deleteConfirm.open ? null : (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '2rem', maxWidth: '420px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>⚠</div>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>Delete User</h3>
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
+                            Are you sure you want to delete <strong>{deleteConfirm.user?.name}</strong>?
+                        </p>
+                    </div>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: '#6b7280', background: '#f9fafb', borderRadius: '6px', padding: '0.75rem', margin: '0 0 1.5rem' }}>
+                    This action cannot be undone. The user will be permanently removed from the system and will no longer be able to log in.
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={() => setDeleteConfirm({ open: false, user: null })}
+                            style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                        Cancel
+                    </button>
+                    <button onClick={handleConfirmDelete}
+                            style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: 'none', background: '#e31937', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                        Delete User
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="dashboard-root">
+            <NotificationBanner />
+            <DeleteConfirmModal />
             <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
             <main className="main-content">
                 <header className="page-header"><h1>{activePage} Management</h1></header>
