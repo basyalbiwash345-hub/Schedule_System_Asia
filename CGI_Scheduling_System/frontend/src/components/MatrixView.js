@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Box, Typography, Chip, Select, MenuItem, FormControl,
-    InputLabel, Tooltip, Paper, IconButton, CircularProgress
+    InputLabel, Tooltip, Paper, IconButton, CircularProgress,
+    ToggleButton, ToggleButtonGroup, TextField
 } from '@mui/material';
 import {
     ChevronLeft as PrevIcon,
     ChevronRight as NextIcon,
     Today as TodayIcon,
+    CalendarMonth as MonthIcon,
+    DateRange as DateRangeIcon,
 } from '@mui/icons-material';
 import {
     DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
@@ -37,16 +40,40 @@ const CODE_COLORS = {
     'CLEAR':{ bg: '#f3f4f6', color: '#6b7280', label: 'Clear cell' },
 };
 
-const CELL = 28;
+const CELL  = 28;
 const NAME_W = 200;
 
+// ── DATE HELPERS ──────────────────────────────────────────────────────────────
 const getDatesForMonth = (monthIdx) =>
     Array.from({ length: DAYS_IN_MONTH[monthIdx] }, (_, i) =>
         `2026-${String(monthIdx + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
     );
 
-const getDayOfWeek  = (d) => new Date(d + 'T00:00:00').getDay();
-const isWeekend     = (d) => { const dow = getDayOfWeek(d); return dow === 0 || dow === 6; };
+const getDatesForRange = (startDate, endDate) => {
+    if (!startDate || !endDate) return [];
+    const dates = [];
+    const cur = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    if (cur > end) return [];
+    // Cap at 365 days to avoid massive grids
+    let count = 0;
+    while (cur <= end && count < 365) {
+        dates.push(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+        count++;
+    }
+    return dates;
+};
+
+const getDayOfWeek = (d) => new Date(d + 'T00:00:00').getDay();
+const isWeekend    = (d) => { const dow = getDayOfWeek(d); return dow === 0 || dow === 6; };
+
+// Get unique months covered by a date range for fetching
+const getMonthsInRange = (dates) => {
+    const months = new Set();
+    dates.forEach(d => months.add(d.substring(0, 7)));
+    return Array.from(months);
+};
 
 // ── DRAGGABLE CODE CHIP ───────────────────────────────────────────────────────
 function DraggableCode({ code, cfg, active }) {
@@ -66,8 +93,8 @@ function DraggableCode({ code, cfg, active }) {
                     border: `2px solid ${active === code ? cfg.color : cfg.color + '33'}`,
                     opacity: isDragging ? 0.35 : 1,
                     transition: 'all 0.12s',
-                    touchAction: 'none',        // ← ADD THIS
-                    userSelect: 'none',          // ← ADD THIS
+                    touchAction: 'none',
+                    userSelect: 'none',
                     '&:hover': { backgroundColor: cfg.color, color: '#fff', transform: 'translateY(-1px)', boxShadow: `0 2px 8px ${cfg.color}55` },
                 }}
             />
@@ -83,8 +110,7 @@ function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTa
         <Box ref={setNodeRef} sx={{
             width: CELL, minWidth: CELL, flexShrink: 0, height: CELL,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backgroundColor: highlight
-                ? '#fef2f2'
+            backgroundColor: highlight ? '#fef2f2'
                 : isToday ? '#fff7f7'
                     : isWeekendDay ? (empIdx % 2 === 0 ? '#f9fafb' : '#f4f4f5')
                         : 'transparent',
@@ -137,18 +163,15 @@ function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, em
                 borderLeft: `3px solid ${teamColor}`,
                 display: 'flex', alignItems: 'center', px: 1, gap: 0.75, height: CELL,
             }}>
-                {/* Drag handle */}
                 <Box {...attributes} {...listeners} sx={{
                     cursor: 'grab', color: '#e5e7eb', fontSize: '0.85rem',
                     px: 0.25, flexShrink: 0, lineHeight: 1,
                     '&:hover': { color: '#9ca3af' },
                     '&:active': { cursor: 'grabbing' },
                 }}>⠿</Box>
-                {/* Avatar */}
                 <Box sx={{
                     width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                    backgroundColor: teamColor + '20',
-                    color: teamColor,
+                    backgroundColor: teamColor + '20', color: teamColor,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: '0.6rem', fontWeight: 800,
                 }}>
@@ -185,24 +208,47 @@ function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, em
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function MatrixView() {
+    // View mode: 'month' | 'range'
+    const [viewMode,       setViewMode]       = useState('month');
     const [selectedMonth,  setSelectedMonth]  = useState(new Date().getMonth());
-    const [filterTeam,     setFilterTeam]     = useState('All');
+    const [rangeStart,     setRangeStart]     = useState('');
+    const [rangeEnd,       setRangeEnd]       = useState('');
+    const [filterTeams,    setFilterTeams]    = useState([]);
+    const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
     const [highlightCode,  setHighlightCode]  = useState(null);
     const [employees,      setEmployees]      = useState([]);
     const [employeeOrder,  setEmployeeOrder]  = useState([]);
     const [schedule,       setSchedule]       = useState({});
     const [loading,        setLoading]        = useState(true);
+    const [scheduleLoading,setScheduleLoading]= useState(false);
     const [activeDrag,     setActiveDrag]     = useState(null);
     const [rangeDrag,      setRangeDrag]      = useState(null);
     const todayRef = useRef(null);
+    const dropdownRef = useRef(null);
 
-    const dates = getDatesForMonth(selectedMonth);
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setTeamDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const today = new Date().toISOString().split('T')[0];
+
+    // Compute dates based on view mode
+    const dates = viewMode === 'month'
+        ? getDatesForMonth(selectedMonth)
+        : getDatesForRange(rangeStart, rangeEnd);
+
     const month = `2026-${String(selectedMonth + 1).padStart(2, '0')}`;
 
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 1 } }));
 
-    // ── FETCH ──────────────────────────────────────────────────────────────────
+    // ── FETCH EMPLOYEES ───────────────────────────────────────────────────────
     const fetchEmployees = useCallback(async () => {
         try {
             const res  = await fetch('/api/matrix-users');
@@ -212,27 +258,60 @@ export default function MatrixView() {
         } catch { setEmployees([]); }
     }, []);
 
-    const fetchSchedule = useCallback(async () => {
-        try {
-            const res  = await fetch(`/api/schedule?month=${month}`);
-            const data = await res.json();
-            const map  = {};
-            data.forEach(e => { map[`${e.user_id}_${e.date}`] = e; });
-            setSchedule(map);
-        } catch { setSchedule({}); }
-    }, [month]);
+    // ── FETCH SCHEDULE ────────────────────────────────────────────────────────
+    const fetchScheduleForMonths = useCallback(async (monthList) => {
+        const allEntries = [];
+        await Promise.all(monthList.map(async (m) => {
+            try {
+                const res  = await fetch(`/api/schedule?month=${m}`);
+                const data = await res.json();
+                allEntries.push(...data);
+            } catch {}
+        }));
+        const map = {};
+        allEntries.forEach(e => { map[`${e.user_id}_${e.date}`] = e; });
+        return map;
+    }, []);
 
+    const fetchSchedule = useCallback(async (datesToFetch) => {
+        setScheduleLoading(true);
+        const months = datesToFetch.length > 0
+            ? getMonthsInRange(datesToFetch)
+            : [month];
+        const map = await fetchScheduleForMonths(months);
+        setSchedule(map);
+        setScheduleLoading(false);
+    }, [month, fetchScheduleForMonths]);
+
+    // Initial load
     useEffect(() => {
         setLoading(true);
-        Promise.all([fetchEmployees(), fetchSchedule()]).finally(() => setLoading(false));
-    }, [fetchEmployees, fetchSchedule]);
+        fetchEmployees().finally(() => setLoading(false));
+    }, [fetchEmployees]);
 
+    // Fetch schedule when month changes (month mode)
     useEffect(() => {
-        if (todayRef.current)
-            todayRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }, [selectedMonth]);
+        if (viewMode === 'month') {
+            fetchSchedule(getDatesForMonth(selectedMonth));
+        }
+    }, [selectedMonth, viewMode]);
 
-    // ── SAVE / CLEAR CELL ──────────────────────────────────────────────────────
+    // Fetch schedule when date range changes (range mode)
+    useEffect(() => {
+        if (viewMode === 'range' && rangeStart && rangeEnd && rangeStart <= rangeEnd) {
+            const rangeDates = getDatesForRange(rangeStart, rangeEnd);
+            if (rangeDates.length > 0) fetchSchedule(rangeDates);
+        }
+    }, [rangeStart, rangeEnd, viewMode]);
+
+    // Scroll today into view in month mode
+    useEffect(() => {
+        if (viewMode === 'month' && todayRef.current) {
+            todayRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    }, [selectedMonth, viewMode]);
+
+    // ── SAVE / CLEAR CELL ─────────────────────────────────────────────────────
     const saveCell = async (userId, date, code) => {
         if (code === 'CLEAR') {
             const existing = schedule[`${userId}_${date}`];
@@ -242,6 +321,8 @@ export default function MatrixView() {
             }
             return;
         }
+        // Optimistic update
+        setSchedule(prev => ({ ...prev, [`${userId}_${date}`]: { user_id: userId, date, code } }));
         const res = await fetch('/api/schedule', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -253,7 +334,7 @@ export default function MatrixView() {
         }
     };
 
-    // ── DRAG HANDLERS ──────────────────────────────────────────────────────────
+    // ── DRAG HANDLERS ─────────────────────────────────────────────────────────
     const handleDragStart = ({ active }) => {
         setActiveDrag(active);
         if (active.data.current?.type === 'cell') {
@@ -273,7 +354,12 @@ export default function MatrixView() {
         const ei = dates.indexOf(ovDate);
         if (si === -1 || ei === -1) return;
         const [lo, hi] = si <= ei ? [si, ei] : [ei, si];
-        setRangeDrag(prev => ({ ...prev, dates: dates.slice(lo, hi + 1) }));
+        setRangeDrag(prev => {
+            if (!prev) return prev;
+            const newDates = dates.slice(lo, hi + 1);
+            if (prev.dates.length === newDates.length && prev.dates[0] === newDates[0]) return prev;
+            return { ...prev, dates: newDates };
+        });
     };
 
     const handleDragEnd = async ({ active, over }) => {
@@ -308,13 +394,13 @@ export default function MatrixView() {
         setRangeDrag(null);
     };
 
-    // ── DERIVED ────────────────────────────────────────────────────────────────
-    const uniqueTeams = ['All', ...Array.from(new Set(employees.map(e => e.team_name)))];
+    // ── DERIVED ───────────────────────────────────────────────────────────────
+    const uniqueTeams = Array.from(new Set(employees.map(e => e.team_name))).sort();
 
     const orderedEmployees = employeeOrder
         .map(id => employees.find(e => String(e.id) === id))
         .filter(Boolean)
-        .filter(e => filterTeam === 'All' || e.team_name === filterTeam);
+        .filter(e => filterTeams.length === 0 || filterTeams.includes(e.team_name));
 
     const grouped = orderedEmployees.reduce((acc, emp) => {
         if (!acc[emp.team_name]) acc[emp.team_name] = [];
@@ -331,6 +417,24 @@ export default function MatrixView() {
         ])
     );
 
+    const rangeValid = viewMode === 'range' && rangeStart && rangeEnd && rangeStart <= rangeEnd;
+    const rangeTooBig = viewMode === 'range' && dates.length > 365;
+
+    // ── RANGE DATE HEADER LABEL ───────────────────────────────────────────────
+    const getDateHeaderLabel = (date) => {
+        // In range mode show month label when date is 1st or first date in range
+        if (viewMode === 'range') {
+            const day = parseInt(date.split('-')[2]);
+            const isFirstInRange = date === dates[0];
+            const isFirstOfMonth = day === 1;
+            if (isFirstInRange || isFirstOfMonth) {
+                const [, m] = date.split('-');
+                return MONTHS[parseInt(m) - 1].substring(0, 3);
+            }
+        }
+        return null;
+    };
+
     if (loading) return (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 400, gap: 2 }}>
             <CircularProgress sx={{ color: '#e31937' }} />
@@ -341,42 +445,174 @@ export default function MatrixView() {
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
             <Box>
-                {/* ── TOOLBAR ─────────────────────────────────────────────── */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                {/* ── TOOLBAR ── */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.5, flexWrap: 'wrap' }}>
 
-                    {/* Month navigator */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                        <IconButton size="small" onClick={() => setSelectedMonth(m => Math.max(0, m - 1))}
-                                    disabled={selectedMonth === 0}
-                                    sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
-                            <PrevIcon fontSize="small" />
-                        </IconButton>
-                        <Box sx={{ px: 2.5, py: 0.75, minWidth: 140, textAlign: 'center', borderLeft: '1px solid #f3f4f6', borderRight: '1px solid #f3f4f6' }}>
-                            <Typography fontWeight={700} fontSize="0.9rem" color="#111827">{MONTHS[selectedMonth]}</Typography>
-                            <Typography fontSize="0.68rem" color="#9ca3af" fontWeight={500}>2026</Typography>
+                    {/* View mode toggle */}
+                    <ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_, v) => { if (v) setViewMode(v); }}
+                        size="small"
+                        sx={{
+                            border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden',
+                            '& .MuiToggleButton-root': { border: 'none', borderRadius: 0, px: 1.5, py: 0.75, fontSize: '0.8rem', textTransform: 'none', color: '#6b7280', fontWeight: 500 },
+                            '& .MuiToggleButton-root.Mui-selected': { backgroundColor: '#fef2f2', color: '#e31937', fontWeight: 700 },
+                            '& .MuiToggleButton-root:hover': { backgroundColor: '#fef2f2', color: '#e31937' },
+                        }}
+                    >
+                        <ToggleButton value="month">
+                            <MonthIcon sx={{ fontSize: '0.9rem', mr: 0.5 }} /> Month
+                        </ToggleButton>
+                        <ToggleButton value="range">
+                            <DateRangeIcon sx={{ fontSize: '0.9rem', mr: 0.5 }} /> Date Range
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+
+                    {/* Month navigator — only in month mode */}
+                    {viewMode === 'month' && (
+                        <>
+                            <Box sx={{ display: 'flex', alignItems: 'center', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                                <IconButton size="small" onClick={() => setSelectedMonth(m => Math.max(0, m - 1))}
+                                            disabled={selectedMonth === 0}
+                                            sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
+                                    <PrevIcon fontSize="small" />
+                                </IconButton>
+                                <Box sx={{ px: 2.5, py: 0.75, minWidth: 140, textAlign: 'center', borderLeft: '1px solid #f3f4f6', borderRight: '1px solid #f3f4f6' }}>
+                                    <Typography fontWeight={700} fontSize="0.9rem" color="#111827">{MONTHS[selectedMonth]}</Typography>
+                                    <Typography fontSize="0.68rem" color="#9ca3af" fontWeight={500}>2026</Typography>
+                                </Box>
+                                <IconButton size="small" onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
+                                            disabled={selectedMonth === 11}
+                                            sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
+                                    <NextIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+
+                            <Box onClick={() => setSelectedMonth(new Date().getMonth())}
+                                 sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'pointer', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75, color: '#e31937', fontWeight: 600, fontSize: '0.82rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', '&:hover': { backgroundColor: '#fef2f2', borderColor: '#e31937' }, transition: 'all 0.12s' }}>
+                                <TodayIcon sx={{ fontSize: '1rem' }} />
+                                <Typography fontSize="0.82rem" fontWeight={600}>Today</Typography>
+                            </Box>
+                        </>
+                    )}
+
+                    {/* Date range pickers — only in range mode */}
+                    {viewMode === 'range' && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75 }}>
+                            <TextField
+                                label="Start Date"
+                                type="date"
+                                size="small"
+                                value={rangeStart}
+                                onChange={e => setRangeStart(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    width: 160,
+                                    '& .MuiOutlinedInput-root': { borderRadius: '6px', '&.Mui-focused fieldset': { borderColor: '#e31937' } },
+                                    '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' },
+                                }}
+                            />
+                            <Typography fontSize="0.85rem" color="#9ca3af" fontWeight={500}>to</Typography>
+                            <TextField
+                                label="End Date"
+                                type="date"
+                                size="small"
+                                value={rangeEnd}
+                                onChange={e => setRangeEnd(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ min: rangeStart }}
+                                sx={{
+                                    width: 160,
+                                    '& .MuiOutlinedInput-root': { borderRadius: '6px', '&.Mui-focused fieldset': { borderColor: '#e31937' } },
+                                    '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' },
+                                }}
+                            />
+                            {rangeValid && (
+                                <Typography fontSize="0.75rem" color="#6b7280" sx={{ whiteSpace: 'nowrap' }}>
+                                    {dates.length} day{dates.length !== 1 ? 's' : ''}
+                                </Typography>
+                            )}
+                            {scheduleLoading && <CircularProgress size={16} sx={{ color: '#e31937' }} />}
                         </Box>
-                        <IconButton size="small" onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
-                                    disabled={selectedMonth === 11}
-                                    sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
-                            <NextIcon fontSize="small" />
-                        </IconButton>
-                    </Box>
+                    )}
 
-                    {/* Today button */}
-                    <Box onClick={() => setSelectedMonth(new Date().getMonth())}
-                         sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'pointer', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75, color: '#e31937', fontWeight: 600, fontSize: '0.82rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', '&:hover': { backgroundColor: '#fef2f2', borderColor: '#e31937' }, transition: 'all 0.12s' }}>
-                        <TodayIcon sx={{ fontSize: '1rem' }} />
-                        <Typography fontSize="0.82rem" fontWeight={600}>Today</Typography>
-                    </Box>
+                    {/* Multi-select team filter */}
+                    <Box ref={dropdownRef} sx={{ position: 'relative' }}>
+                        <Box
+                            onClick={() => setTeamDropdownOpen(o => !o)}
+                            sx={{
+                                display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5,
+                                minWidth: 200, maxWidth: 340, minHeight: 38,
+                                border: teamDropdownOpen ? '1px solid #e31937' : '1px solid #e5e7eb',
+                                borderRadius: '8px', px: 1.25, py: 0.5, cursor: 'pointer',
+                                backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                transition: 'border 0.12s',
+                            }}
+                        >
+                            {filterTeams.length === 0 ? (
+                                <Typography fontSize="0.85rem" color="#9ca3af">Filter by Team...</Typography>
+                            ) : (
+                                filterTeams.map(t => (
+                                    <Chip
+                                        key={t}
+                                        label={t}
+                                        size="small"
+                                        onDelete={(e) => { e.stopPropagation(); setFilterTeams(prev => prev.filter(x => x !== t)); }}
+                                        sx={{ height: 20, fontSize: '0.68rem', backgroundColor: '#fef2f2', color: '#e31937', fontWeight: 700, '& .MuiChip-deleteIcon': { fontSize: '0.75rem', color: '#e31937' } }}
+                                    />
+                                ))
+                            )}
+                            <Typography fontSize="0.75rem" color="#9ca3af" sx={{ ml: 'auto', flexShrink: 0 }}>▾</Typography>
+                        </Box>
 
-                    {/* Team filter */}
-                    <FormControl size="small" sx={{ minWidth: 200 }}>
-                        <InputLabel sx={{ fontSize: '0.85rem', '&.Mui-focused': { color: '#e31937' } }}>Filter by Team</InputLabel>
-                        <Select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} label="Filter by Team"
-                                sx={{ borderRadius: '8px', fontSize: '0.85rem', '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#e31937' } }}>
-                            {uniqueTeams.map(t => <MenuItem key={t} value={t} sx={{ fontSize: '0.85rem' }}>{t}</MenuItem>)}
-                        </Select>
-                    </FormControl>
+                        {/* Dropdown panel */}
+                        {teamDropdownOpen && (
+                            <Box sx={{
+                                position: 'absolute', top: '100%', left: 0, mt: 0.5,
+                                minWidth: 260, maxHeight: 280, overflowY: 'auto',
+                                backgroundColor: '#fff', borderRadius: '8px',
+                                border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                zIndex: 100, py: 0.5,
+                            }}>
+                                {/* Clear all */}
+                                <Box
+                                    onClick={() => setFilterTeams([])}
+                                    sx={{ px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', '&:hover': { backgroundColor: '#f9fafb' }, borderBottom: '1px solid #f3f4f6' }}
+                                >
+                                    <Typography fontSize="0.8rem" color="#6b7280">All Teams</Typography>
+                                    {filterTeams.length === 0 && <Typography fontSize="0.7rem" color="#e31937" fontWeight={700}>✓ Active</Typography>}
+                                    {filterTeams.length > 0 && <Typography fontSize="0.7rem" color="#9ca3af" sx={{ cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setFilterTeams([]); }}>Clear all</Typography>}
+                                </Box>
+
+                                {/* Team options */}
+                                {uniqueTeams.map(team => {
+                                    const selected = filterTeams.includes(team);
+                                    return (
+                                        <Box
+                                            key={team}
+                                            onClick={() => setFilterTeams(prev => selected ? prev.filter(t => t !== team) : [...prev, team])}
+                                            sx={{
+                                                px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 1,
+                                                cursor: 'pointer', backgroundColor: selected ? '#fef2f2' : 'transparent',
+                                                '&:hover': { backgroundColor: selected ? '#fef2f2' : '#f9fafb' },
+                                            }}
+                                        >
+                                            <Box sx={{
+                                                width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
+                                                border: `2px solid ${selected ? '#e31937' : '#d1d5db'}`,
+                                                backgroundColor: selected ? '#e31937' : 'transparent',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            }}>
+                                                {selected && <Typography fontSize="0.55rem" color="#fff" fontWeight={800} lineHeight={1}>✓</Typography>}
+                                            </Box>
+                                            <Typography fontSize="0.82rem" color={selected ? '#e31937' : '#374151'} fontWeight={selected ? 600 : 400} noWrap>{team}</Typography>
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        )}
+                    </Box>
 
                     {/* Code palette */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 'auto', flexWrap: 'wrap', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75 }}>
@@ -387,97 +623,120 @@ export default function MatrixView() {
                     </Box>
                 </Box>
 
-                {/* ── MATRIX GRID ─────────────────────────────────────────── */}
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                    <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
-                        <Box sx={{ minWidth: NAME_W + dates.length * CELL }}>
-
-                            {/* DATE HEADER */}
-                            <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff', borderBottom: '2px solid #e5e7eb' }}>
-                                <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 20, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', display: 'flex', alignItems: 'center', px: 2, height: 44 }}>
-                                    <Typography fontSize="0.68rem" fontWeight={700} color="#6b7280" textTransform="uppercase" letterSpacing="0.06em">Employee</Typography>
-                                </Box>
-                                {dates.map(date => {
-                                    const isToday  = date === today;
-                                    const weekend  = isWeekend(date);
-                                    const dow      = getDayOfWeek(date);
-                                    return (
-                                        <Box key={date} ref={isToday ? todayRef : null} sx={{
-                                            width: CELL, minWidth: CELL, flexShrink: 0,
-                                            textAlign: 'center', py: 0.5, height: 44,
-                                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                            backgroundColor: isToday ? '#fef2f2' : weekend ? '#f9fafb' : '#fff',
-                                            borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6',
-                                            borderRight: isToday ? '2px solid #e31937' : 'none',
-                                        }}>
-                                            <Typography fontSize="0.55rem" lineHeight={1} color={isToday ? '#e31937' : '#c4c4c4'} fontWeight={isToday ? 800 : 400} textTransform="uppercase">
-                                                {DAY_ABBREVS[dow]}
-                                            </Typography>
-                                            <Typography fontSize="0.72rem" fontWeight={isToday ? 800 : weekend ? 400 : 600} color={isToday ? '#e31937' : weekend ? '#c4c4c4' : '#374151'} lineHeight={1.4}>
-                                                {parseInt(date.split('-')[2])}
-                                            </Typography>
-                                        </Box>
-                                    );
-                                })}
-                            </Box>
-
-                            {/* OUT OF OFFICE ROW */}
-                            <Box sx={{ display: 'flex', backgroundColor: '#fafafa', borderBottom: '2px solid #e5e7eb' }}>
-                                <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#fafafa', borderRight: '2px solid #e5e7eb', px: 2, display: 'flex', alignItems: 'center', height: 24 }}>
-                                    <Typography fontSize="0.62rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.05em">Out of Office</Typography>
-                                </Box>
-                                {dates.map(date => {
-                                    const count   = absenceCount[date] || 0;
-                                    const isToday = date === today;
-                                    return (
-                                        <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: isToday ? '#fef2f2' : isWeekend(date) ? '#f9fafb' : 'transparent', borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6' }}>
-                                            {count > 0 && (
-                                                <Box sx={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: count >= 5 ? '#fee2e2' : count >= 3 ? '#fef3c7' : '#f3f4f6', color: count >= 5 ? '#991b1b' : count >= 3 ? '#92400e' : '#6b7280' }}>
-                                                    <Typography fontSize="0.55rem" fontWeight={700} lineHeight={1}>{count}</Typography>
-                                                </Box>
-                                            )}
-                                        </Box>
-                                    );
-                                })}
-                            </Box>
-
-                            {/* EMPLOYEE ROWS */}
-                            {Object.entries(grouped).map(([teamName, emps]) => {
-                                const teamColor = emps[0]?.team_color || '#6b7280';
-                                return (
-                                    <React.Fragment key={teamName}>
-                                        {/* Team header */}
-                                        <Box sx={{ display: 'flex', backgroundColor: '#f9fafb', borderBottom: '1px solid #e8e8e8', borderTop: '2px solid #e5e7eb' }}>
-                                            <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', px: 2, py: 0.6, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: teamColor }} />
-                                                <Typography fontSize="0.7rem" fontWeight={700} color="#374151" noWrap letterSpacing="0.01em">{teamName}</Typography>
-                                                <Chip label={emps.length} size="small" sx={{ height: 15, fontSize: '0.58rem', ml: 'auto', backgroundColor: teamColor + '18', color: teamColor, fontWeight: 700 }} />
-                                            </Box>
-                                            {dates.map(date => (
-                                                <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, backgroundColor: date === today ? '#fef2f2' : isWeekend(date) ? '#f3f4f6' : '#f9fafb', borderLeft: date === today ? '2px solid #e31937' : '1px solid #ececec' }} />
-                                            ))}
-                                        </Box>
-
-                                        {/* Sortable rows */}
-                                        <SortableContext items={emps.map(e => String(e.id))} strategy={verticalListSortingStrategy}>
-                                            {emps.map((emp, idx) => (
-                                                <SortableRow
-                                                    key={emp.id} emp={emp}
-                                                    dates={dates} schedule={schedule}
-                                                    today={today} highlightCode={highlightCode}
-                                                    teamColor={teamColor} empIdx={idx}
-                                                    rangeDrag={rangeDrag}
-                                                />
-                                            ))}
-                                        </SortableContext>
-                                    </React.Fragment>
-                                );
-                            })}
-                        </Box>
+                {/* Range mode — empty state */}
+                {viewMode === 'range' && !rangeValid && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, border: '2px dashed #e5e7eb', borderRadius: '12px', flexDirection: 'column', gap: 1 }}>
+                        <DateRangeIcon sx={{ fontSize: '2.5rem', color: '#d1d5db' }} />
+                        <Typography fontSize="0.9rem" color="#9ca3af" fontWeight={500}>Select a start and end date to view the schedule</Typography>
                     </Box>
-                </Paper>
+                )}
 
-                {/* ── LEGEND ──────────────────────────────────────────────── */}
+                {/* Range too large warning */}
+                {rangeTooBig && (
+                    <Box sx={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', px: 2, py: 1, mb: 2 }}>
+                        <Typography fontSize="0.85rem" color="#92400e" fontWeight={600}>⚠ Range is too large. Please select a range of 365 days or fewer.</Typography>
+                    </Box>
+                )}
+
+                {/* Matrix grid — show when dates are available */}
+                {dates.length > 0 && !rangeTooBig && (
+                    <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                        <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+                            <Box sx={{ minWidth: NAME_W + dates.length * CELL }}>
+
+                                {/* DATE HEADER */}
+                                <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff', borderBottom: '2px solid #e5e7eb' }}>
+                                    <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 20, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', display: 'flex', alignItems: 'center', px: 2, height: 44 }}>
+                                        <Typography fontSize="0.68rem" fontWeight={700} color="#6b7280" textTransform="uppercase" letterSpacing="0.06em">Employee</Typography>
+                                    </Box>
+                                    {dates.map(date => {
+                                        const isToday  = date === today;
+                                        const weekend  = isWeekend(date);
+                                        const dow      = getDayOfWeek(date);
+                                        const monthLabel = getDateHeaderLabel(date);
+                                        return (
+                                            <Box key={date} ref={isToday ? todayRef : null} sx={{
+                                                width: CELL, minWidth: CELL, flexShrink: 0,
+                                                textAlign: 'center', height: 44,
+                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                backgroundColor: isToday ? '#fef2f2' : weekend ? '#f9fafb' : '#fff',
+                                                borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6',
+                                                borderRight: isToday ? '2px solid #e31937' : 'none',
+                                                position: 'relative',
+                                            }}>
+                                                {/* Month label in range mode */}
+                                                {monthLabel && viewMode === 'range' && (
+                                                    <Typography fontSize="0.5rem" lineHeight={1} color="#e31937" fontWeight={700} textTransform="uppercase" sx={{ position: 'absolute', top: 2 }}>
+                                                        {monthLabel}
+                                                    </Typography>
+                                                )}
+                                                <Typography fontSize="0.55rem" lineHeight={1} color={isToday ? '#e31937' : '#c4c4c4'} fontWeight={isToday ? 800 : 400} textTransform="uppercase" mt={monthLabel && viewMode === 'range' ? 0.75 : 0}>
+                                                    {DAY_ABBREVS[dow]}
+                                                </Typography>
+                                                <Typography fontSize="0.72rem" fontWeight={isToday ? 800 : weekend ? 400 : 600} color={isToday ? '#e31937' : weekend ? '#c4c4c4' : '#374151'} lineHeight={1.4}>
+                                                    {parseInt(date.split('-')[2])}
+                                                </Typography>
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+
+                                {/* OUT OF OFFICE ROW */}
+                                <Box sx={{ display: 'flex', backgroundColor: '#fafafa', borderBottom: '2px solid #e5e7eb' }}>
+                                    <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#fafafa', borderRight: '2px solid #e5e7eb', px: 2, display: 'flex', alignItems: 'center', height: 24 }}>
+                                        <Typography fontSize="0.62rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.05em">Out of Office</Typography>
+                                    </Box>
+                                    {dates.map(date => {
+                                        const count   = absenceCount[date] || 0;
+                                        const isToday = date === today;
+                                        return (
+                                            <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: isToday ? '#fef2f2' : isWeekend(date) ? '#f9fafb' : 'transparent', borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6' }}>
+                                                {count > 0 && (
+                                                    <Box sx={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: count >= 5 ? '#fee2e2' : count >= 3 ? '#fef3c7' : '#f3f4f6', color: count >= 5 ? '#991b1b' : count >= 3 ? '#92400e' : '#6b7280' }}>
+                                                        <Typography fontSize="0.55rem" fontWeight={700} lineHeight={1}>{count}</Typography>
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+
+                                {/* EMPLOYEE ROWS */}
+                                {Object.entries(grouped).map(([teamName, emps]) => {
+                                    const teamColor = emps[0]?.team_color || '#6b7280';
+                                    return (
+                                        <React.Fragment key={teamName}>
+                                            <Box sx={{ display: 'flex', backgroundColor: '#f9fafb', borderBottom: '1px solid #e8e8e8', borderTop: '2px solid #e5e7eb' }}>
+                                                <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', px: 2, py: 0.6, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: teamColor }} />
+                                                    <Typography fontSize="0.7rem" fontWeight={700} color="#374151" noWrap letterSpacing="0.01em">{teamName}</Typography>
+                                                    <Chip label={emps.length} size="small" sx={{ height: 15, fontSize: '0.58rem', ml: 'auto', backgroundColor: teamColor + '18', color: teamColor, fontWeight: 700 }} />
+                                                </Box>
+                                                {dates.map(date => (
+                                                    <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, backgroundColor: date === today ? '#fef2f2' : isWeekend(date) ? '#f3f4f6' : '#f9fafb', borderLeft: date === today ? '2px solid #e31937' : '1px solid #ececec' }} />
+                                                ))}
+                                            </Box>
+
+                                            <SortableContext items={emps.map(e => String(e.id))} strategy={verticalListSortingStrategy}>
+                                                {emps.map((emp, idx) => (
+                                                    <SortableRow
+                                                        key={emp.id} emp={emp}
+                                                        dates={dates} schedule={schedule}
+                                                        today={today} highlightCode={highlightCode}
+                                                        teamColor={teamColor} empIdx={idx}
+                                                        rangeDrag={rangeDrag}
+                                                    />
+                                                ))}
+                                            </SortableContext>
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </Box>
+                        </Box>
+                    </Paper>
+                )}
+
+                {/* LEGEND */}
                 <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 2, py: 1 }}>
                     <Typography fontSize="0.65rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.06em">Legend:</Typography>
                     {Object.entries(CODE_COLORS).filter(([c]) => c !== 'CLEAR').map(([code, cfg]) => (
