@@ -66,8 +66,8 @@ function App() {
 
     // Add these with your other User states in App.js
     const [searchTerm, setSearchTerm] = useState('');
-    const [roleFilter, setRoleFilter] = useState('');
-    const [teamFilter, setTeamFilter] = useState('');
+    const [teamFilter, setTeamFilter] = useState([]);
+    const [roleFilter, setRoleFilter] = useState([]);
     const [statusFilter, setStatusFilter] = useState('');
 
     // Team state
@@ -75,6 +75,8 @@ function App() {
     const [showEditTeamModal, setShowEditTeamModal] = useState(false);
     const [editingTeam, setEditingTeam] = useState(null);
     const [teamFormData, setTeamFormData] = useState(DEFAULT_TEAM_FORM);
+    const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+    const [showRoleDropdown, setShowRoleDropdown] = useState(false);
     const [viewingTeam, setViewingTeam] = useState(null);
     const [showViewTeamModal, setShowViewTeamModal] = useState(false);
     const [teamDeleteConfirm, setTeamDeleteConfirm] = useState({ open: false, teamId: null, teamName: '' });
@@ -363,14 +365,18 @@ function App() {
         if (activePage === 'Users') {
             // Filter logic based on your criteria
             const filteredUsers = users.filter(u => {
+                const userTeam = teams.find(t => t.id === u.team_id);
+                const teamName = userTeam ? userTeam.name.toLowerCase() : '';
+
                 const matchesSearch =
                     u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase()));
+                    (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    teamName.includes(searchTerm.toLowerCase());
 
-                const matchesTeam = !teamFilter || u.team_id === parseInt(teamFilter);
+                const matchesTeam = teamFilter.length === 0 || teamFilter.includes(String(u.team_id));
+                const matchesRole = roleFilter.length === 0 || u.user_roles?.some(ur => roleFilter.includes(String(ur.role_id)));
                 const matchesStatus = !statusFilter || u.status === statusFilter;
-                const matchesRole = !roleFilter || u.user_roles?.some(ur => ur.role_id === parseInt(roleFilter));
 
                 return matchesSearch && matchesTeam && matchesStatus && matchesRole;
             });
@@ -392,46 +398,90 @@ function App() {
                         border: '1px solid #e5e7eb'
                     }}>
                         {/* Search Input */}
-                        <div style={{ flex: 2 }}>
+                        <div style={{flex: 2}}>
                             <input
                                 type="text"
                                 placeholder="Search name, email, or username..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
+                                style={{...inputStyle(), marginBottom: 0}}
                             />
                         </div>
 
-                        {/* Team Filter */}
-                        <div style={{ flex: 1 }}>
-                            <select
-                                value={teamFilter}
-                                onChange={(e) => setTeamFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
+                        {/* --- Team Multi-Select Dropdown --- */}
+                        <div style={{ flex: 1, position: 'relative' }}>
+                            <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Teams</label>
+                            <button
+                                type="button"
+                                onClick={() => setShowTeamDropdown(!showTeamDropdown)}
+                                style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                             >
-                                <option value="">All Teams</option>
-                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
+                                {teamFilter.length === 0 ? "All Teams" : `${teamFilter.length} Selected`}
+                                <span>{showTeamDropdown ? '▲' : '▼'}</span>
+                            </button>
+
+                            {showTeamDropdown && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
+                                    {teams.map(t => (
+                                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={teamFilter.includes(String(t.id))}
+                                                onChange={() => {
+                                                    const id = String(t.id);
+                                                    setTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                                                }}
+                                            />
+                                            {t.name}
+                                        </label>
+                                    ))}
+                                    {teamFilter.length > 0 && (
+                                        <button onClick={() => setTeamFilter([])} style={{ width: '100%', marginTop: '5px', fontSize: '0.7rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>Clear All</button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Role Filter */}
-                        <div style={{ flex: 1 }}>
-                            <select
-                                value={roleFilter}
-                                onChange={(e) => setRoleFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
+                        {/* --- Role Multi-Select Dropdown --- */}
+                        <div style={{ flex: 1, position: 'relative' }}>
+                            <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Roles</label>
+                            <button
+                                type="button"
+                                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                                style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                             >
-                                <option value="">All Roles</option>
-                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
+                                {roleFilter.length === 0 ? "All Roles" : `${roleFilter.length} Selected`}
+                                <span>{showRoleDropdown ? '▲' : '▼'}</span>
+                            </button>
+
+                            {showRoleDropdown && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
+                                    {roles.map(r => (
+                                        <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={roleFilter.includes(String(r.id))}
+                                                onChange={() => {
+                                                    const id = String(r.id);
+                                                    setRoleFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                                                }}
+                                            />
+                                            {r.name}
+                                        </label>
+                                    ))}
+                                    {roleFilter.length > 0 && (
+                                        <button onClick={() => setRoleFilter([])} style={{ width: '100%', marginTop: '5px', fontSize: '0.7rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>Clear All</button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Status Filter */}
-                        <div style={{ flex: 1 }}>
+                        <div style={{flex: 1}}>
                             <select
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
-                                style={{ ...inputStyle(), marginBottom: 0 }}
+                                style={{...inputStyle(), marginBottom: 0}}
                             >
                                 <option value="">All Statuses</option>
                                 <option value="active">Active</option>
