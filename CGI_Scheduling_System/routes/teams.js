@@ -19,6 +19,28 @@ router.get('/', async function(req, res) {
   }
 });
 
+// GET /api/teams/:id
+router.get('/:id', async function(req, res) {
+  try {
+    const teamId = parseInt(req.params.id);
+    const team = await prisma.teams.findUnique({
+      where: { id: teamId },
+      include: {
+        // This MUST match the relation name in your schema.prisma
+        // which is usually the name of the related model (lead)
+        lead: true,
+        rotations: true
+      }
+    });
+
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+
+    res.json(team);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch team details' });
+  }
+});
+
 // POST /api/teams
 router.post('/', async function(req, res) {
   try {

@@ -75,6 +75,9 @@ function App() {
     const [showEditTeamModal, setShowEditTeamModal] = useState(false);
     const [editingTeam, setEditingTeam] = useState(null);
     const [teamFormData, setTeamFormData] = useState(DEFAULT_TEAM_FORM);
+    const [viewingTeam, setViewingTeam] = useState(null);
+    const [showViewTeamModal, setShowViewTeamModal] = useState(false);
+    const [teamDeleteConfirm, setTeamDeleteConfirm] = useState({ open: false, teamId: null, teamName: '' });
 
     // Rotation state
     const [rotationFormData, setRotationFormData] = useState(DEFAULT_ROTATION_FORM);
@@ -189,10 +192,41 @@ function App() {
 
     const handleTeamFieldChange = (field, value) => setTeamFormData(prev => ({ ...prev, [field]: value }));
     const openCreateTeam = () => { setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); };
+    const openViewTeam = (team) => {
+        // Instead of fetching from the server,
+        // just use the team object we already have from the list.
+        setViewingTeam(team);
+        setShowViewTeamModal(true);
+    };
     const openEditTeam = (team) => { setTeamFormData({ name: team.name, color: team.color || '#e31937', leadId: team.lead_id || '', members: team.members ? JSON.parse(team.members) : [], description: team.description || '' }); setEditingTeam(team); setShowEditTeamModal(true); };
     const handleSaveTeam = async (e) => { e.preventDefault(); const method = editingTeam ? 'PUT' : 'POST'; const url = editingTeam ? `/api/teams/${editingTeam.id}` : '/api/teams'; const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(teamFormData) }); if (r.ok) { fetchTeams(); closeTeamModal(); } };
-    const handleDeleteTeam = async (id) => { if (!window.confirm('Delete this team?')) return; const r = await fetch(`/api/teams/${id}`, { method: 'DELETE' }); if (r.ok) fetchTeams(); };
-    const closeTeamModal = () => { setShowCreateTeamModal(false); setShowEditTeamModal(false); setEditingTeam(null); };
+// App.js
+    const handleDeleteTeam = (id) => {
+        const team = teams.find(t => t.id === id);
+        setTeamDeleteConfirm({
+            open: true,
+            teamId: id,
+            teamName: team ? team.name : ''
+        });
+    };
+
+    const handleConfirmDeleteTeam = async () => {
+        const { teamId } = teamDeleteConfirm;
+        setTeamDeleteConfirm({ open: false, teamId: null, teamName: '' });
+
+        try {
+            const r = await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
+            if (r.ok) {
+                fetchTeams();
+                showNotification('Team deleted successfully.');
+            } else {
+                const data = await r.json();
+                showNotification(data.error || 'Failed to delete team.', 'error');
+            }
+        } catch (err) {
+            showNotification('Network error. Please try again.', 'error');
+        }
+    };    const closeTeamModal = () => { setShowCreateTeamModal(false); setShowEditTeamModal(false); setEditingTeam(null); };
 
     const handleSaveRotation = async (e) => {
         e.preventDefault();
@@ -674,66 +708,191 @@ function App() {
                 </div>
             );
         }
-
+        // teams page layout
         if (activePage === 'Teams') {
             return (
-                <div className="enterprise-card no-padding">
-                    <div style={{ padding: '1.5rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3>Active Teams ({teams.length})</h3>
-                        <button className="btn-primary" style={{ width: 'auto' }} onClick={openCreateTeam}>+ Create Team</button>
+                <div>
+                    {/* Header matches User style */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ margin: 0, color: '#111827' }}>Team Management</h2>
+                        <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>
+                            + Create Team
+                        </button>
                     </div>
-                    <div style={{ padding: '1.5rem' }}>
-                        {teams.length === 0 ? <p>No teams found.</p> : (
-                            <div style={{ display: 'grid', gap: '1rem' }}>
-                                {teams.map(team => (
-                                    <div key={team.id} className="enterprise-card" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem' }}>
-                                        <div style={{ width: '40px', height: '40px', borderRadius: '8px', backgroundColor: team.color }} />
-                                        <div style={{ flex: 1 }}>
-                                            <h4 style={{ margin: 0 }}>{team.name}</h4>
-                                            <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>{team.description || 'No description'}</p>
-                                            <div style={{ fontSize: '0.8rem', marginTop: '4px' }}><strong>Lead:</strong> {team.lead?.name || 'None'} | <strong>Role:</strong> {team.team_role || 'Member'}</div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button onClick={() => { setSelectedTeam(team); setActivePage('TeamDetails'); }}>View</button>
-                                            <button onClick={() => openEditTeam(team)}>Edit</button>
-                                            <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>Delete</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+
+                    <div className="enterprise-card no-padding">
+                        <table className="data-table">
+                            <thead>
+                            <tr>
+                                <th>Color</th>
+                                <th>Team Name</th>
+                                <th>Lead</th>
+                                <th>Members Count</th>
+                                <th>Description</th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {teams.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                                        No teams found.
+                                    </td>
+                                </tr>
+                            ) : (
+                                teams.map(team => (
+                                    <tr key={team.id}>
+                                        <td>
+                                            <div style={{
+                                                width: '24px',
+                                                height: '24px',
+                                                borderRadius: '4px',
+                                                backgroundColor: team.color || '#e31937',
+                                                border: '1px solid #e5e7eb'
+                                            }} />
+                                        </td>
+                                        <td><strong>{team.name}</strong></td>
+                                        <td>{team.lead?.name || '—'}</td>
+                                        <td>
+                                            {/* Parsing the members JSON string to get count */}
+                                            {team.members ? (JSON.parse(team.members).length) : 0} members
+                                        </td>
+                                        <td style={{color: '#6b7280', fontSize: '0.85rem'}}>
+                                        {team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}
+                                        </td>
+                                        <td>
+                                            <button onClick={() => openViewTeam(team)} style={{
+                                                marginRight: '0.5rem',
+                                                background: '#f0f9ff',
+                                                color: '#0369a1',
+                                                border: '1px solid #bae6fd',
+                                                borderRadius: '4px',
+                                                padding: '3px 10px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 600
+                                            }}>View
+                                            </button>
+                                            <button onClick={() => openEditTeam(team)} style={{marginRight: '0.5rem'}}>
+                                                Edit
+                                            </button>
+                                            <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                            </tbody>
+                        </table>
                     </div>
+
+                    {/* Modal remains largely the same but ensure it uses the modal-overlay and enterprise-card classes */}
                     {(showCreateTeamModal || showEditTeamModal) && (
                         <div className="modal-overlay" onClick={closeTeamModal}>
                             <div className="enterprise-card" style={{ minWidth: '550px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                                <h2 style={{ textAlign: 'center' }}>{editingTeam ? 'Edit Team' : 'New Team'}</h2>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h2 style={{ margin: 0 }}>{editingTeam ? 'Edit Team' : 'Create New Team'}</h2>
+                                    <button onClick={closeTeamModal} className="close-modal-btn">✕</button>
+                                </div>
                                 <form onSubmit={handleSaveTeam}>
-                                    <label>Team Name</label>
-                                    <input className="enterprise-input" value={teamFormData.name} onChange={e => handleTeamFieldChange('name', e.target.value)} required />
-                                    <label>Team Color</label>
-                                    <input type="color" style={{ display: 'block', marginBottom: '1rem', width: '60px', height: '40px' }} value={teamFormData.color} onChange={e => handleTeamFieldChange('color', e.target.value)} />
-                                    <label>Team Lead</label>
-                                    <select className="enterprise-input" value={teamFormData.leadId} onChange={e => handleTeamFieldChange('leadId', e.target.value)} required>
-                                        <option value="">Select a lead</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                    </select>
-                                    <label>Assign Members</label>
-                                    <select className="enterprise-input" multiple size="6" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', Array.from(e.target.selectedOptions, option => option.value))}>
-                                        <option value="">Select members...</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                    </select>
-                                    <label>Description</label>
-                                    <textarea className="enterprise-input" rows="4" value={teamFormData.description} onChange={e => handleTeamFieldChange('description', e.target.value)} />
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
-                                        <button type="submit" className="btn-primary">Save Team</button>
-                                        <button type="button" onClick={closeTeamModal} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Team Name</label>
+                                        <input style={inputStyle()} value={teamFormData.name} onChange={e => handleTeamFieldChange('name', e.target.value)} required />
+                                    </div>
+
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Team Color</label>
+                                        <input type="color" style={{ display: 'block', marginBottom: '1rem', width: '60px', height: '40px', border: 'none', background: 'none' }} value={teamFormData.color} onChange={e => handleTeamFieldChange('color', e.target.value)} />
+                                    </div>
+
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Team Lead</label>
+                                        <select style={inputStyle()} value={teamFormData.leadId} onChange={e => handleTeamFieldChange('leadId', e.target.value)} required>
+                                            <option value="">Select a lead</option>
+                                            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Assign Members</label>
+                                        <select style={{...inputStyle(), height: 'auto'}} multiple size="6" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', Array.from(e.target.selectedOptions, option => option.value))}>
+                                            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                        </select>
+                                        <small style={{ color: '#6b7280', display: 'block', marginTop: '4px' }}>Hold Ctrl/Cmd to select multiple</small>
+                                    </div>
+
+                                    <div style={fieldWrap}>
+                                        <label style={labelStyle}>Description</label>
+                                        <textarea style={inputStyle()} rows="3" value={teamFormData.description} onChange={e => handleTeamFieldChange('description', e.target.value)} />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                                        <button type="submit" className="btn-primary" style={{ flex: 1 }}>Save Team</button>
+                                        <button type="button" onClick={closeTeamModal} className="btn-cancel" style={{ flex: 1 }}>Cancel</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
+                    {/* ── VIEW TEAM MODAL ── */}
+                    {showViewTeamModal && (
+                        <div className="modal-overlay" onClick={() => setShowViewTeamModal(false)}>
+                            <div className="modal-content" style={{ minWidth: '500px' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h2 style={{ margin: 0 }}>Team Details</h2>
+                                    <button onClick={() => setShowViewTeamModal(false)} className="close-modal-btn">✕</button>
+                                </div>
+
+                                {viewingTeam && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                            <div style={{
+                                                width: '50px',
+                                                height: '50px',
+                                                borderRadius: '12px',
+                                                backgroundColor: viewingTeam.color
+                                            }} />
+                                            <div>
+                                                <h3 style={{ margin: 0 }}>{viewingTeam.name}</h3>
+                                                <p style={{ margin: 0, color: '#6b7280' }}>ID: {viewingTeam.id}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="info-box">
+                                            <label>Team Lead</label>
+                                            <p>{viewingTeam.lead?.name || 'No lead assigned'}</p>
+                                        </div>
+
+                                        <div className="info-box">
+                                            <label>Members Count</label>
+                                            <p>{viewingTeam.members ? JSON.parse(viewingTeam.members).length : 0} Members</p>
+                                        </div>
+
+                                        <div className="info-box">
+                                            <label>Description</label>
+                                            <p>{viewingTeam.description || 'No description provided.'}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                    <button
+                                        onClick={() => { setShowViewTeamModal(false); openEditTeam(viewingTeam); }}
+                                        className="btn-primary" style={{ flex: 1 }}
+                                    >
+                                        Edit Team
+                                    </button>
+                                    <button onClick={() => setShowViewTeamModal(false)} className="btn-cancel" style={{ flex: 1 }}>
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
+
         }
 
         if (activePage === 'Rotations') {
@@ -1160,10 +1319,41 @@ function App() {
         </div>
     );
 
+    // App.js
+    const TeamDeleteConfirmModal = () => !teamDeleteConfirm.open ? null : (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '2rem', maxWidth: '420px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>⚠</div>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>Delete Team</h3>
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
+                            Are you sure you want to delete <strong>{teamDeleteConfirm.teamName}</strong>?
+                        </p>
+                    </div>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: '#6b7280', background: '#f9fafb', borderRadius: '6px', padding: '0.75rem', margin: '0 0 1.5rem' }}>
+                    This will permanently remove the team. Members assigned to this team will become unassigned.
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={() => setTeamDeleteConfirm({ open: false, teamId: null, teamName: '' })}
+                            style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                        Cancel
+                    </button>
+                    <button onClick={handleConfirmDeleteTeam}
+                            style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: 'none', background: '#e31937', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                        Delete Team
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="dashboard-root">
             <NotificationBanner />
             <DeleteConfirmModal />
+            <TeamDeleteConfirmModal />
             <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
             <main className="main-content">
                 <header className="page-header"><h1>{activePage} Management</h1></header>
