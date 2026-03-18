@@ -1,10 +1,10 @@
 /* RESET & CENTERING LOGIC */
 html, body, #root, .App {
-  height: 100%;
+  min-height: 100%; /* Changed from height: 100% */
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Prevents scrollbars during the demo */
+  overflow-y: auto; /* Changed from overflow: hidden */
 }
 
 .login-page {
