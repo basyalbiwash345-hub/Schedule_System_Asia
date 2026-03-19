@@ -80,6 +80,7 @@ function App() {
     const [viewingTeam, setViewingTeam] = useState(null);
     const [showViewTeamModal, setShowViewTeamModal] = useState(false);
     const [teamDeleteConfirm, setTeamDeleteConfirm] = useState({ open: false, teamId: null, teamName: '' });
+    
 
     // Rotation state
     const [rotationFormData, setRotationFormData] = useState(DEFAULT_ROTATION_FORM);
