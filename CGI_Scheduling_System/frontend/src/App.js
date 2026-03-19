@@ -51,7 +51,7 @@ function App() {
     const [rotations, setRotations] = useState([]);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
-    const [activePage, setActivePage] = useState('Users');
+    const [activePage, setActivePage] = useState('Matrix');
     const [selectedTeam, setSelectedTeam] = useState(null);
 
     // User state
