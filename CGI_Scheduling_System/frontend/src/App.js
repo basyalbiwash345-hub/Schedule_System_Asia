@@ -64,11 +64,17 @@ function App() {
     const [showViewModal, setShowViewModal] = useState(false);
     const [viewUserError, setViewUserError] = useState('');
 
-    // Add these with your other User states in App.js
+    //User state filters
     const [searchTerm, setSearchTerm] = useState('');
     const [teamFilter, setTeamFilter] = useState([]);
     const [roleFilter, setRoleFilter] = useState([]);
     const [statusFilter, setStatusFilter] = useState('');
+    const [modalLocationSearch, setModalLocationSearch] = useState('');
+    const [modalTeamSearch, setModalTeamSearch] = useState('');
+    const [showModalLocationDropdown, setShowModalLocationDropdown] = useState(false);
+    const [showModalTeamDropdown, setShowModalTeamDropdown] = useState(false);
+    const [userTeamFilterSearch, setUserTeamFilterSearch] = useState('');
+    const [userRoleFilterSearch, setUserRoleFilterSearch] = useState('');
 
     // Team state
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
@@ -80,7 +86,18 @@ function App() {
     const [viewingTeam, setViewingTeam] = useState(null);
     const [showViewTeamModal, setShowViewTeamModal] = useState(false);
     const [teamDeleteConfirm, setTeamDeleteConfirm] = useState({ open: false, teamId: null, teamName: '' });
-    
+    const [showModalMemberDropdown, setShowModalMemberDropdown] = useState(false);
+    // Teams Search & Filter state
+    const [teamSearchTerm, setTeamSearchTerm] = useState('');
+    const [leadFilter, setLeadFilter] = useState([]);
+    const [memberFilter, setMemberFilter] = useState([]);
+    const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+    const [showMemberDropdown, setShowMemberDropdown] = useState(false);
+    const [modalLeadSearch, setModalLeadSearch] = useState('');
+    const [modalMemberSearch, setModalMemberSearch] = useState('');
+    const [showModalLeadDropdown, setShowModalLeadDropdown] = useState(false);
+    const [teamLeadFilterSearch, setTeamLeadFilterSearch] = useState('');
+    const [teamMemberFilterSearch, setTeamMemberFilterSearch] = useState('');
 
     // Rotation state
     const [rotationFormData, setRotationFormData] = useState(DEFAULT_ROTATION_FORM);
@@ -150,6 +167,18 @@ function App() {
         }
     };
 
+    const closeUserModal = () => {
+        setShowUserModal(false);
+        setEditingUser(null);
+        setUserFormSuccess('');
+        setUserFormErrors({});
+
+        setShowModalLocationDropdown(false);
+        setShowModalTeamDropdown(false);
+        setModalLocationSearch('');
+        setModalTeamSearch('');
+    };
+
     const handleUserFieldChange = (field, value) => { setUserForm(prev => ({ ...prev, [field]: value })); if (userFormErrors[field]) setUserFormErrors(prev => { const e = { ...prev }; delete e[field]; return e; }); };
     const handleRoleToggle = (roleId) => { setUserForm(prev => { const exists = prev.roles.includes(roleId); return { ...prev, roles: exists ? prev.roles.filter(r => r !== roleId) : [...prev.roles, roleId] }; }); if (userFormErrors.roles) setUserFormErrors(prev => { const e = { ...prev }; delete e.roles; return e; }); };
 
@@ -163,7 +192,9 @@ function App() {
             if (!res.ok) { setUserFormErrors(data.errors || { general: data.error || 'An error occurred.' }); return; }
             setUserFormSuccess(editingUser ? 'User updated successfully.' : 'User created successfully.');
             fetchUsers();
-            setTimeout(() => { setShowUserModal(false); setUserFormSuccess(''); }, 1500);
+            setTimeout(() => {
+                closeUserModal(); // Changed from setShowUserModal(false)
+            }, 1500);
         } catch { setUserFormErrors({ general: 'Network error. Please try again.' }); }
     };
 
@@ -229,7 +260,14 @@ function App() {
         } catch (err) {
             showNotification('Network error. Please try again.', 'error');
         }
-    };    const closeTeamModal = () => { setShowCreateTeamModal(false); setShowEditTeamModal(false); setEditingTeam(null); };
+    };
+    const closeTeamModal = () => {
+        setShowCreateTeamModal(false);
+        setShowEditTeamModal(false);
+        setEditingTeam(null);
+        setShowModalMemberDropdown(false); // Add this line
+    };
+
 
     const handleSaveRotation = async (e) => {
         e.preventDefault();
@@ -392,7 +430,7 @@ function App() {
                         display: 'flex',
                         gap: '1rem',
                         marginBottom: '1.5rem',
-                        alignItems: 'center',
+                        alignItems: 'flex-end',
                         background: '#fff',
                         padding: '1rem',
                         borderRadius: '8px',
@@ -400,6 +438,12 @@ function App() {
                     }}>
                         {/* Search Input */}
                         <div style={{flex: 2}}>
+                            <label style={{
+                                fontSize: '0.75rem',
+                                color: '#6b7280',
+                                display: 'block',
+                                marginBottom: '4px'
+                            }}>Search</label>
                             <input
                                 type="text"
                                 placeholder="Search name, email, or username..."
@@ -410,7 +454,7 @@ function App() {
                         </div>
 
                         {/* --- Team Multi-Select Dropdown --- */}
-                        <div style={{ flex: 1, position: 'relative' }}>
+                        <div style={{flex: 1, position: 'relative' }}>
                             <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Teams</label>
                             <button
                                 type="button"
@@ -422,30 +466,88 @@ function App() {
                             </button>
 
                             {showTeamDropdown && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
-                                    {teams.map(t => (
-                                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={teamFilter.includes(String(t.id))}
-                                                onChange={() => {
-                                                    const id = String(t.id);
-                                                    setTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-                                                }}
-                                            />
-                                            {t.name}
-                                        </label>
-                                    ))}
+
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    background: '#fff',
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                                    maxHeight: '200px',
+                                    overflowY: 'auto'
+                                }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Search teams..."
+                                        value={userTeamFilterSearch}
+                                        onChange={(e) => setUserTeamFilterSearch(e.target.value)}
+                                        style={{
+                                            ...inputStyle(),
+                                            marginBottom: '8px',
+                                            padding: '0.4rem',
+                                            fontSize: '0.75rem'
+                                        }}
+                                    />
+                                    {teams
+                                        .filter(t => t.name.toLowerCase().includes(userTeamFilterSearch.toLowerCase()))
+                                        .sort((a, b) => {
+                                            const search = userTeamFilterSearch.toLowerCase();
+                                            // If the search is empty, sort A-Z
+                                            if (!search) return a.name.localeCompare(b.name);
+
+                                            const aIndex = a.name.toLowerCase().indexOf(search);
+                                            const bIndex = b.name.toLowerCase().indexOf(search);
+
+                                            // Move names that start with the search term to the top
+                                            if (aIndex !== bIndex) return aIndex - bIndex;
+
+                                            return a.name.localeCompare(b.name);
+                                        })
+                                        .map(t => (
+                                            <label key={t.id} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                padding: '4px 0',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem'
+                                            }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={teamFilter.includes(String(t.id))}
+                                                    onChange={() => {
+                                                        const id = String(t.id);
+                                                        setTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                                                    }}
+                                                />
+                                                {t.name}
+                                            </label>
+                                        ))
+                                    }
                                     {teamFilter.length > 0 && (
-                                        <button onClick={() => setTeamFilter([])} style={{ width: '100%', marginTop: '5px', fontSize: '0.7rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>Clear All</button>
+                                        <button onClick={() => setTeamFilter([])} style={{
+                                            width: '100%',
+                                            marginTop: '5px',
+                                            fontSize: '0.7rem',
+                                            color: '#e31937',
+                                            border: 'none',
+                                            background: 'none',
+                                            cursor: 'pointer',
+                                            textAlign: 'left'
+                                        }}>Clear All</button>
                                     )}
                                 </div>
                             )}
                         </div>
 
                         {/* --- Role Multi-Select Dropdown --- */}
-                        <div style={{ flex: 1, position: 'relative' }}>
-                            <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Roles</label>
+                        <div style={{flex: 1, position: 'relative'}}>
+                            <label style={{fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Roles</label>
                             <button
                                 type="button"
                                 onClick={() => setShowRoleDropdown(!showRoleDropdown)}
@@ -479,6 +581,12 @@ function App() {
 
                         {/* Status Filter */}
                         <div style={{flex: 1}}>
+                            <label style={{
+                                fontSize: '0.75rem',
+                                color: '#6b7280',
+                                display: 'block',
+                                marginBottom: '4px'
+                            }}>Status</label>
                             <select
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -492,7 +600,7 @@ function App() {
                     </div>
 
                     <div className="enterprise-card no-padding">
-                        <table className="data-table">
+                    <table className="data-table">
                             <thead>
                             <tr>
                                 <th>First Name</th>
@@ -654,11 +762,11 @@ function App() {
                     )}
 
                     {showUserModal && (
-                        <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
+                        <div className="modal-overlay" onClick={closeUserModal}>
                             <div className="enterprise-card" style={{ minWidth: '620px', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                                     <h2 style={{ margin: 0 }}>{editingUser ? 'Edit User' : 'Create User'}</h2>
-                                    <button onClick={() => setShowUserModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
+                                    <button onClick={closeUserModal} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
                                 </div>
 
                                 {userFormErrors.general && <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem' }}>{userFormErrors.general}</div>}
@@ -701,33 +809,190 @@ function App() {
                                         </div>
                                         <div>
                                             <label style={labelStyle}>Location</label>
-                                            <select style={inputStyle('location')} value={userForm.location} onChange={e => handleUserFieldChange('location', e.target.value)}>
-                                                <option value="">Select location</option>
-                                                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                                            </select>
+                                            <div style={{position: 'relative'}}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowModalLocationDropdown(!showModalLocationDropdown)}
+                                                    style={{
+                                                        ...inputStyle(),
+                                                        textAlign: 'left',
+                                                        background: '#fff',
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center'
+                                                    }}
+                                                >
+                                                    {userForm.location || "Select location"}
+                                                    <span>{showModalLocationDropdown ? '▲' : '▼'}</span>
+                                                </button>
+
+                                                {showModalLocationDropdown && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '100%',
+                                                        left: 0,
+                                                        right: 0,
+                                                        zIndex: 120,
+                                                        background: '#fff',
+                                                        border: '1px solid #e5e7eb',
+                                                        borderRadius: '6px',
+                                                        padding: '0.5rem',
+                                                        boxShadow: '0 10px 15px rgba(0,0,0,0.1)',
+                                                        maxHeight: '200px',
+                                                        overflowY: 'auto'
+                                                    }}>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Search locations..."
+                                                            value={modalLocationSearch}
+                                                            onChange={(e) => setModalLocationSearch(e.target.value)}
+                                                            style={{
+                                                                ...inputStyle(),
+                                                                marginBottom: '8px',
+                                                                padding: '0.4rem',
+                                                                fontSize: '0.8rem'
+                                                            }}
+                                                        />
+                                                        {locations.filter(l => l.name.toLowerCase().includes(modalLocationSearch.toLowerCase())).map(l => (
+                                                            <div
+                                                                key={l.id}
+                                                                onClick={() => {
+                                                                    handleUserFieldChange('location', l.name);
+                                                                    setShowModalLocationDropdown(false);
+                                                                    setModalLocationSearch('');
+                                                                }}
+                                                                style={{
+                                                                    padding: '8px',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.85rem',
+                                                                    borderRadius: '4px',
+                                                                    background: userForm.location === l.name ? '#fef2f2' : 'transparent'
+                                                                }}
+                                                                onMouseEnter={(e) => e.target.style.background = '#f9fafb'}
+                                                                onMouseLeave={(e) => e.target.style.background = userForm.location === l.name ? '#fef2f2' : 'transparent'}
+                                                            >
+                                                                {l.name}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
                                     {/* Assigned Team */}
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Assigned Team</label>
-                                        <select style={inputStyle('team_id')} value={userForm.team_id} onChange={e => handleUserFieldChange('team_id', e.target.value)}>
-                                            <option value="">Select a team</option>
-                                            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                        </select>
+                                        <div style={{position: 'relative'}}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowModalTeamDropdown(!showModalTeamDropdown)}
+                                                style={{
+                                                    ...inputStyle(),
+                                                    textAlign: 'left',
+                                                    background: '#fff',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                {userForm.team_id ? (teams.find(t => String(t.id) === String(userForm.team_id))?.name) : "Select a team"}
+                                                <span>{showModalTeamDropdown ? '▲' : '▼'}</span>
+                                            </button>
+
+                                            {showModalTeamDropdown && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    zIndex: 115,
+                                                    background: '#fff',
+                                                    border: '1px solid #e5e7eb',
+                                                    borderRadius: '6px',
+                                                    padding: '0.5rem',
+                                                    boxShadow: '0 10px 15px rgba(0,0,0,0.1)',
+                                                    maxHeight: '200px',
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search teams..."
+                                                        value={modalTeamSearch}
+                                                        onChange={(e) => setModalTeamSearch(e.target.value)}
+                                                        style={{
+                                                            ...inputStyle(),
+                                                            marginBottom: '8px',
+                                                            padding: '0.4rem',
+                                                            fontSize: '0.8rem'
+                                                        }}
+                                                    />
+                                                    {/* Add a "Clear/Unassigned" option */}
+                                                    <div
+                                                        onClick={() => {
+                                                            handleUserFieldChange('team_id', '');
+                                                            setShowModalTeamDropdown(false);
+                                                        }}
+                                                        style={{
+                                                            padding: '8px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.85rem',
+                                                            color: '#9ca3af',
+                                                            fontStyle: 'italic'
+                                                        }}
+                                                    >
+                                                        None (Unassigned)
+                                                    </div>
+                                                    {teams.filter(t => t.name.toLowerCase().includes(modalTeamSearch.toLowerCase())).map(t => (
+                                                        <div
+                                                            key={t.id}
+                                                            onClick={() => {
+                                                                handleUserFieldChange('team_id', t.id);
+                                                                setShowModalTeamDropdown(false);
+                                                                setModalTeamSearch('');
+                                                            }}
+                                                            style={{
+                                                                padding: '8px',
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.85rem',
+                                                                borderRadius: '4px',
+                                                                background: String(userForm.team_id) === String(t.id) ? '#fef2f2' : 'transparent'
+                                                            }}
+                                                            onMouseEnter={(e) => e.target.style.background = '#f9fafb'}
+                                                            onMouseLeave={(e) => e.target.style.background = String(userForm.team_id) === String(t.id) ? '#fef2f2' : 'transparent'}
+                                                        >
+                                                            {t.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Roles */}
                                     <div style={fieldWrap}>
-                                        <label style={labelStyle}>Role(s) <span style={{ color: '#e31937' }}>*</span></label>
+                                        <label style={labelStyle}>Role(s) <span
+                                            style={{color: '#e31937'}}>*</span></label>
                                         {roles.length === 0 ? (
-                                            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No roles available. Add roles first.</p>
+                                            <p style={{color: '#9ca3af', fontSize: '0.875rem'}}>No roles available. Add
+                                                roles first.</p>
                                         ) : (
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.5rem'}}>
                                                 {roles.map(role => {
                                                     const selected = userForm.roles.includes(role.id);
                                                     return (
-                                                        <button key={role.id} type="button" onClick={() => handleRoleToggle(role.id)} style={{ padding: '0.4rem 0.9rem', borderRadius: '20px', border: `2px solid ${selected ? '#e31937' : '#e5e7eb'}`, background: selected ? '#fef2f2' : '#fff', color: selected ? '#e31937' : '#6b7280', fontWeight: selected ? 700 : 400, cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.15s' }}>
+                                                        <button key={role.id} type="button"
+                                                                onClick={() => handleRoleToggle(role.id)} style={{
+                                                            padding: '0.4rem 0.9rem',
+                                                            borderRadius: '20px',
+                                                            border: `2px solid ${selected ? '#e31937' : '#e5e7eb'}`,
+                                                            background: selected ? '#fef2f2' : '#fff',
+                                                            color: selected ? '#e31937' : '#6b7280',
+                                                            fontWeight: selected ? 700 : 400,
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.85rem',
+                                                            transition: 'all 0.15s'
+                                                        }}>
                                                             {selected ? '✓ ' : ''}{role.name}
                                                         </button>
                                                     );
@@ -750,7 +1015,7 @@ function App() {
 
                                     <div style={{ display: 'flex', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid #f3f4f6' }}>
                                         <button type="submit" className="btn-primary" style={{ flex: 1 }}>{editingUser ? 'Update User' : 'Create User'}</button>
-                                        <button type="button" onClick={() => setShowUserModal(false)} style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                        <button type="button" onClick={closeUserModal} style={{ flex: 1, background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                                     </div>
                                 </form>
                             </div>
@@ -761,16 +1026,245 @@ function App() {
         }
         // teams page layout
         if (activePage === 'Teams') {
+
+            // Filter logic for the Teams page
+            const filteredTeams = teams.filter(t => {
+                // 1. Prepare search strings
+                const leadName = t.lead?.name.toLowerCase() || '';
+
+                // Parse member IDs from stringified JSON and look up their names
+                const teamMemberIds = t.members ? JSON.parse(t.members).map(String) : [];
+                const memberNames = teamMemberIds
+                    .map(id => userLookup[id]?.name || '')
+                    .join(' ')
+                    .toLowerCase();
+
+                // 2. Search Logic (Name, Lead, or Members)
+                const matchesSearch =
+                    t.name.toLowerCase().includes(teamSearchTerm.toLowerCase()) ||
+                    leadName.includes(teamSearchTerm.toLowerCase()) ||
+                    memberNames.includes(teamSearchTerm.toLowerCase());
+
+                // 3. Multi-Select Lead Filter
+                const matchesLead = leadFilter.length === 0 || leadFilter.includes(String(t.lead_id));
+
+                // 4. Multi-Select Member Filter (Checks if team contains ANY of selected members)
+                const matchesMembers = memberFilter.length === 0 ||
+                    memberFilter.some(id => teamMemberIds.includes(id));
+
+                return matchesSearch && matchesLead && matchesMembers;
+            });
             return (
                 <div>
-                    {/* Header matches User style */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h2 style={{ margin: 0, color: '#111827' }}>Team Management</h2>
-                        <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>
-                            + Create Team
-                        </button>
-                    </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ margin: 0, color: '#111827' }}>Team Management</h2>
+                            <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>+ Create Team</button>
+                        </div>
 
+                    {/* --- TEAM SEARCH & FILTER BAR --- */}
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'center', background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ flex: 2 }}>
+                            <input
+                                type="text"
+                                placeholder="Search team name, lead, or members..."
+                                value={teamSearchTerm}
+                                onChange={(e) => setTeamSearchTerm(e.target.value)}
+                                style={{ ...inputStyle(), marginBottom: 0 }}
+                            />
+                        </div>
+
+                        {/* Lead Dropdown */}
+                        <div style={{ flex: 1, position: 'relative' }}>
+                            <button type="button" onClick={() => setShowLeadDropdown(!showLeadDropdown)} style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                {leadFilter.length === 0 ? "All Leads" : `${leadFilter.length} Selected`}
+                                <span>{showLeadDropdown ? '▲' : '▼'}</span>
+                            </button>
+                            {showLeadDropdown && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    background: '#fff',
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                                    maxHeight: '200px',
+                                    overflowY: 'auto'
+                                }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Search leads..."
+                                        value={teamLeadFilterSearch}
+                                        onChange={(e) => setTeamLeadFilterSearch(e.target.value)}
+                                        style={{
+                                            ...inputStyle(),
+                                            marginBottom: '8px',
+                                            padding: '0.4rem',
+                                            fontSize: '0.75rem'
+                                        }}
+                                    />
+
+                                    {users
+                                        // 1. Filter the users based on the lead search text
+                                        .filter(u => u.name.toLowerCase().includes(teamLeadFilterSearch.toLowerCase()))
+                                        // 2. Sort so matches appear at the top
+                                        .sort((a, b) => {
+                                            const search = teamLeadFilterSearch.toLowerCase();
+                                            if (!search) return a.name.localeCompare(b.name); // Default A-Z
+
+                                            const aIndex = a.name.toLowerCase().indexOf(search);
+                                            const bIndex = b.name.toLowerCase().indexOf(search);
+
+                                            // Move the names that start with the search term to the top
+                                            if (aIndex !== bIndex) return aIndex - bIndex;
+
+                                            return a.name.localeCompare(b.name);
+                                        })
+                                        // 3. Map the sorted/filtered results
+                                        .map(u => (
+                                            <label key={u.id} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                padding: '4px 0',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem'
+                                            }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={leadFilter.includes(String(u.id))}
+                                                    onChange={() => {
+                                                        const id = String(u.id);
+                                                        setLeadFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                                                    }}
+                                                />
+                                                {u.name}
+                                            </label>
+                                        ))
+                                    }
+                                    {leadFilter.length > 0 && (
+                                        <button onClick={() => setLeadFilter([])} style={{
+                                            width: '100%',
+                                            marginTop: '5px',
+                                            fontSize: '0.7rem',
+                                            color: '#e31937',
+                                            border: 'none',
+                                            background: 'none',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            ✕ Clear All
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Member Dropdown */}
+                        <div style={{flex: 1, position: 'relative'}}>
+                            <button type="button" onClick={() => setShowMemberDropdown(!showMemberDropdown)} style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                {memberFilter.length === 0 ? "All Members" : `${memberFilter.length} Selected`}
+                                <span>{showMemberDropdown ? '▲' : '▼'}</span>
+                            </button>
+                            {showMemberDropdown && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    background: '#fff',
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                                    maxHeight: '200px',
+                                    overflowY: 'auto'
+                                }}>
+                                    <div style={{
+                                        padding: '4px',
+                                        position: 'sticky',
+                                        top: 0,
+                                        background: '#fff',
+                                        zIndex: 1
+                                    }}>
+                                        <input
+                                            type="text"
+                                            placeholder="Search members..."
+                                            value={teamMemberFilterSearch}
+                                            onChange={(e) => setTeamMemberFilterSearch(e.target.value)}
+                                            style={{
+                                                ...inputStyle(),
+                                                marginBottom: '8px',
+                                                padding: '0.4rem',
+                                                fontSize: '0.75rem'
+                                            }}
+                                        />
+                                    </div>
+                                    {users
+                                        // 1. Filter the users based on what you typed
+                                        .filter(u => u.name.toLowerCase().includes(teamMemberFilterSearch.toLowerCase()))
+                                        // 2. Sort them so matches and A-Z appear correctly
+                                        .sort((a, b) => {
+                                            const search = teamMemberFilterSearch.toLowerCase();
+                                            // If search is empty, just keep it Alphabetical A-Z
+                                            if (!search) return a.name.localeCompare(b.name);
+
+                                            const aIndex = a.name.toLowerCase().indexOf(search);
+                                            const bIndex = b.name.toLowerCase().indexOf(search);
+
+                                            // If one name starts with the search term (index 0) and the other doesn't,
+                                            // move the one that starts with it to the top.
+                                            if (aIndex !== bIndex) return aIndex - bIndex;
+
+                                            // Otherwise, sort the remaining matches alphabetically
+                                            return a.name.localeCompare(b.name);
+                                        })
+                                        // 3. Map the sorted/filtered results
+                                        .map(u => (
+                                            <label key={u.id} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                padding: '4px 0',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem'
+                                            }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={memberFilter.includes(String(u.id))}
+                                                    onChange={() => {
+                                                        const id = String(u.id);
+                                                        setMemberFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                                                    }}
+                                                />
+                                                {u.name}
+                                            </label>
+                                        ))
+                                    }
+                                    {memberFilter.length > 0 && (
+                                        <button onClick={() => setMemberFilter([])} style={{
+                                            width: '100%',
+                                            marginTop: '5px',
+                                            fontSize: '0.7rem',
+                                            color: '#e31937',
+                                            border: 'none',
+                                            background: 'none',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            ✕ Clear All
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                     <div className="enterprise-card no-padding">
                         <table className="data-table">
                             <thead>
@@ -784,14 +1278,10 @@ function App() {
                             </tr>
                             </thead>
                             <tbody>
-                            {teams.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
-                                        No teams found.
-                                    </td>
-                                </tr>
+                            {filteredTeams.length === 0 ? (
+                                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>No teams match these filters.</td></tr>
                             ) : (
-                                teams.map(team => (
+                                filteredTeams.map(team => (
                                     <tr key={team.id}>
                                         <td>
                                             <div style={{
@@ -804,12 +1294,48 @@ function App() {
                                         </td>
                                         <td><strong>{team.name}</strong></td>
                                         <td>{team.lead?.name || '—'}</td>
-                                        <td>
-                                            {/* Parsing the members JSON string to get count */}
-                                            {team.members ? (JSON.parse(team.members).length) : 0} members
+                                        <td style={{minWidth: '180px'}}>
+                                            <div style={{fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem'}}>
+                                                {team.members ? JSON.parse(team.members).length : 0} Members
+                                            </div>
+                                            <div style={{display: 'flex', flexWrap: 'wrap', gap: '4px'}}>
+                                                {team.members && JSON.parse(team.members).slice(0, 3).map(id => (
+                                                    <span key={id} style={{
+                                                        background: '#f9fafb',
+                                                        border: '1px solid #e5e7eb',
+                                                        color: '#6b7280',
+                                                        borderRadius: '4px',
+                                                        padding: '1px 6px',
+                                                        fontSize: '0.7rem',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                {userLookup[id]?.name ? userLookup[id].name.split(' ')[0] : 'User'}
+            </span>
+                                                ))}
+
+                                                {/* Updated "more" section to be a clickable button */}
+                                                {team.members && JSON.parse(team.members).length > 3 && (
+                                                    <button
+                                                        onClick={() => openViewTeam(team)} // This opens your View modal
+                                                        style={{
+                                                            fontSize: '0.7rem',
+                                                            color: '#0369a1', // Blue color to indicate a link
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            padding: 0,
+                                                            cursor: 'pointer',
+                                                            alignSelf: 'center',
+                                                            textDecoration: 'underline',
+                                                            fontWeight: 500
+                                                        }}
+                                                    >
+                                                        +{JSON.parse(team.members).length - 3} more
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                         <td style={{color: '#6b7280', fontSize: '0.85rem'}}>
-                                        {team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}
+                                            {team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}
                                         </td>
                                         <td>
                                             <button onClick={() => openViewTeam(team)} style={{
@@ -827,7 +1353,7 @@ function App() {
                                             <button onClick={() => openEditTeam(team)} style={{marginRight: '0.5rem'}}>
                                                 Edit
                                             </button>
-                                            <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>
+                                            <button onClick={() => handleDeleteTeam(team.id)} style={{color: 'red'}}>
                                                 Delete
                                             </button>
                                         </td>
@@ -849,38 +1375,209 @@ function App() {
                                 <form onSubmit={handleSaveTeam}>
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Team Name</label>
-                                        <input style={inputStyle()} value={teamFormData.name} onChange={e => handleTeamFieldChange('name', e.target.value)} required />
+                                        <input style={inputStyle()} value={teamFormData.name}
+                                               onChange={e => handleTeamFieldChange('name', e.target.value)} required/>
                                     </div>
 
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Team Color</label>
-                                        <input type="color" style={{ display: 'block', marginBottom: '1rem', width: '60px', height: '40px', border: 'none', background: 'none' }} value={teamFormData.color} onChange={e => handleTeamFieldChange('color', e.target.value)} />
+                                        <input type="color" style={{
+                                            display: 'block',
+                                            marginBottom: '1rem',
+                                            width: '60px',
+                                            height: '40px',
+                                            border: 'none',
+                                            background: 'none'
+                                        }} value={teamFormData.color}
+                                               onChange={e => handleTeamFieldChange('color', e.target.value)}/>
                                     </div>
 
                                     <div style={fieldWrap}>
-                                        <label style={labelStyle}>Team Lead</label>
-                                        <select style={inputStyle()} value={teamFormData.leadId} onChange={e => handleTeamFieldChange('leadId', e.target.value)} required>
-                                            <option value="">Select a lead</option>
-                                            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                        </select>
+                                        <label style={labelStyle}>Team Lead <span
+                                            style={{color: '#e31937'}}>*</span></label>
+                                        <div style={{position: 'relative'}}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowModalLeadDropdown(!showModalLeadDropdown)}
+                                                style={{
+                                                    ...inputStyle(),
+                                                    textAlign: 'left',
+                                                    background: '#fff',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                {teamFormData.leadId ? (users.find(u => String(u.id) === String(teamFormData.leadId))?.name) : "Select a lead"}
+                                                <span>{showModalLeadDropdown ? '▲' : '▼'}</span>
+                                            </button>
+
+                                            {showModalLeadDropdown && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    zIndex: 110,
+                                                    background: '#fff',
+                                                    border: '1px solid #e5e7eb',
+                                                    borderRadius: '6px',
+                                                    padding: '0.5rem',
+                                                    boxShadow: '0 10px 15px rgba(0,0,0,0.1)',
+                                                    maxHeight: '250px',
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search leads..."
+                                                        value={modalLeadSearch}
+                                                        onChange={(e) => setModalLeadSearch(e.target.value)}
+                                                        style={{
+                                                            ...inputStyle(),
+                                                            marginBottom: '8px',
+                                                            padding: '0.4rem'
+                                                        }}
+                                                    />
+                                                    {users.filter(u => u.name.toLowerCase().includes(modalLeadSearch.toLowerCase())).map(u => (
+                                                        <div
+                                                            key={u.id}
+                                                            onClick={() => {
+                                                                handleTeamFieldChange('leadId', u.id);
+                                                                setShowModalLeadDropdown(false);
+                                                                setModalLeadSearch('');
+                                                            }}
+                                                            style={{
+                                                                padding: '8px',
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.85rem',
+                                                                borderRadius: '4px',
+                                                                background: String(teamFormData.leadId) === String(u.id) ? '#fef2f2' : 'transparent'
+                                                            }}
+                                                            onMouseEnter={(e) => e.target.style.background = '#f9fafb'}
+                                                            onMouseLeave={(e) => e.target.style.background = String(teamFormData.leadId) === String(u.id) ? '#fef2f2' : 'transparent'}
+                                                        >
+                                                            {u.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div style={fieldWrap}>
-                                        <label style={labelStyle}>Assign Members</label>
-                                        <select style={{...inputStyle(), height: 'auto'}} multiple size="6" value={teamFormData.members} onChange={e => handleTeamFieldChange('members', Array.from(e.target.selectedOptions, option => option.value))}>
-                                            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                        </select>
-                                        <small style={{ color: '#6b7280', display: 'block', marginTop: '4px' }}>Hold Ctrl/Cmd to select multiple</small>
+                                        <label style={labelStyle}>Assign Members <span
+                                            style={{color: '#e31937'}}>*</span></label>
+                                        <div style={{position: 'relative'}}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowModalMemberDropdown(!showModalMemberDropdown)}
+                                                style={{
+                                                    ...inputStyle(),
+                                                    textAlign: 'left',
+                                                    background: '#fff',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                {teamFormData.members.length === 0 ? "Select members" : `${teamFormData.members.length} member(s) selected`}
+                                                <span>{showModalMemberDropdown ? '▲' : '▼'}</span>
+                                            </button>
+
+                                            {showModalMemberDropdown && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    zIndex: 100,
+                                                    background: '#fff',
+                                                    border: '1px solid #e5e7eb',
+                                                    borderRadius: '6px',
+                                                    padding: '0.5rem',
+                                                    boxShadow: '0 10px 15px rgba(0,0,0,0.1)',
+                                                    maxHeight: '300px',
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    {/* Internal Search Bar */}
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search members to add..."
+                                                        value={modalMemberSearch}
+                                                        onChange={(e) => setModalMemberSearch(e.target.value)}
+                                                        style={{
+                                                            ...inputStyle(),
+                                                            marginBottom: '8px',
+                                                            padding: '0.4rem'
+                                                        }}
+                                                    />
+
+                                                    <div style={{
+                                                        paddingBottom: '8px',
+                                                        borderBottom: '1px solid #f3f4f6',
+                                                        marginBottom: '8px',
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between'
+                                                    }}>
+                                                        <button type="button"
+                                                                onClick={() => handleTeamFieldChange('members', [])}
+                                                                style={{
+                                                                    fontSize: '0.75rem',
+                                                                    color: '#e31937',
+                                                                    border: 'none',
+                                                                    background: 'none',
+                                                                    cursor: 'pointer',
+                                                                    fontWeight: 600
+                                                                }}>✕ Clear All
+                                                        </button>
+                                                        <span style={{
+                                                            fontSize: '0.75rem',
+                                                            color: '#9ca3af'
+                                                        }}>{teamFormData.members.length} selected</span>
+                                                    </div>
+
+                                                    {users
+                                                        .filter(u => u.name.toLowerCase().includes(modalMemberSearch.toLowerCase()))
+                                                        .map(u => (
+                                                            <label key={u.id} style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.5rem',
+                                                                padding: '6px 0',
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.85rem'
+                                                            }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={teamFormData.members.includes(String(u.id))}
+                                                                    onChange={() => {
+                                                                        const id = String(u.id);
+                                                                        const newMembers = teamFormData.members.includes(id)
+                                                                            ? teamFormData.members.filter(m => m !== id)
+                                                                            : [...teamFormData.members, id];
+                                                                        handleTeamFieldChange('members', newMembers);
+                                                                    }}
+                                                                />
+                                                                {u.name}
+                                                            </label>
+                                                        ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Description</label>
-                                        <textarea style={inputStyle()} rows="3" value={teamFormData.description} onChange={e => handleTeamFieldChange('description', e.target.value)} />
+                                        <textarea style={inputStyle()} rows="3" value={teamFormData.description}
+                                                  onChange={e => handleTeamFieldChange('description', e.target.value)}/>
                                     </div>
 
-                                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                                        <button type="submit" className="btn-primary" style={{ flex: 1 }}>Save Team</button>
-                                        <button type="button" onClick={closeTeamModal} className="btn-cancel" style={{ flex: 1 }}>Cancel</button>
+                                    <div style={{display: 'flex', gap: '1rem', marginTop: '1.5rem'}}>
+                                        <button type="submit" className="btn-primary" style={{flex: 1}}>Save Team
+                                        </button>
+                                        <button type="button" onClick={closeTeamModal} className="btn-cancel"
+                                                style={{flex: 1}}>Cancel
+                                        </button>
                                     </div>
                                 </form>
                             </div>
@@ -889,24 +1586,36 @@ function App() {
                     {/* ── VIEW TEAM MODAL ── */}
                     {showViewTeamModal && (
                         <div className="modal-overlay" onClick={() => setShowViewTeamModal(false)}>
-                            <div className="modal-content" style={{ minWidth: '500px' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h2 style={{ margin: 0 }}>Team Details</h2>
-                                    <button onClick={() => setShowViewTeamModal(false)} className="close-modal-btn">✕</button>
+                            <div className="modal-content" style={{minWidth: '500px'}}
+                                 onClick={e => e.stopPropagation()}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <h2 style={{margin: 0}}>Team Details</h2>
+                                    <button onClick={() => setShowViewTeamModal(false)} className="close-modal-btn">✕
+                                    </button>
                                 </div>
 
                                 {viewingTeam && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                    <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '1rem'}}>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '1rem',
+                                            marginBottom: '1rem'
+                                        }}>
                                             <div style={{
                                                 width: '50px',
                                                 height: '50px',
                                                 borderRadius: '12px',
                                                 backgroundColor: viewingTeam.color
-                                            }} />
+                                            }}/>
                                             <div>
-                                                <h3 style={{ margin: 0 }}>{viewingTeam.name}</h3>
-                                                <p style={{ margin: 0, color: '#6b7280' }}>ID: {viewingTeam.id}</p>
+                                                <h3 style={{margin: 0}}>{viewingTeam.name}</h3>
+                                                <p style={{margin: 0, color: '#6b7280'}}>ID: {viewingTeam.id}</p>
                                             </div>
                                         </div>
 
@@ -915,9 +1624,48 @@ function App() {
                                             <p>{viewingTeam.lead?.name || 'No lead assigned'}</p>
                                         </div>
 
-                                        <div className="info-box">
-                                            <label>Members Count</label>
-                                            <p>{viewingTeam.members ? JSON.parse(viewingTeam.members).length : 0} Members</p>
+                                        <div className="info-box" style={{gridColumn: 'span 1'}}>
+                                            <label style={{
+                                                display: 'block',
+                                                marginBottom: '8px',
+                                                fontWeight: 700,
+                                                color: '#374151'
+                                            }}>
+                                                Team Members
+                                                ({viewingTeam.members ? JSON.parse(viewingTeam.members).length : 0})
+                                            </label>
+                                            <div style={{
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: '6px',
+                                                maxHeight: '200px',
+                                                overflowY: 'auto',
+                                                padding: '10px',
+                                                background: '#f9fafb',
+                                                borderRadius: '8px',
+                                                border: '1px solid #f3f4f6'
+                                            }}>
+                                                {viewingTeam.members && JSON.parse(viewingTeam.members).length > 0 ? (
+                                                    JSON.parse(viewingTeam.members).map(id => (
+                                                        <span key={id} style={{
+                                                            background: '#fff',
+                                                            border: '1px solid #e5e7eb',
+                                                            color: '#4b5563',
+                                                            borderRadius: '6px',
+                                                            padding: '4px 10px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 500,
+                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                                            display: 'flex',
+                                                            alignItems: 'center'
+                                                        }}>
+                    {userLookup[id]?.name || 'Unknown User'}
+                </span>
+                                                    ))
+                                                ) : (
+                                                    <span style={{color: '#9ca3af', fontSize: '0.85rem'}}>No members assigned to this team.</span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="info-box">
@@ -927,20 +1675,26 @@ function App() {
                                     </div>
                                 )}
 
-                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                <div style={{display: 'flex', gap: '1rem', marginTop: '2rem'}}>
                                     <button
-                                        onClick={() => { setShowViewTeamModal(false); openEditTeam(viewingTeam); }}
-                                        className="btn-primary" style={{ flex: 1 }}
+                                        onClick={() => {
+                                            setShowViewTeamModal(false);
+                                            openEditTeam(viewingTeam);
+                                        }}
+                                        className="btn-primary" style={{flex: 1}}
                                     >
                                         Edit Team
                                     </button>
-                                    <button onClick={() => setShowViewTeamModal(false)} className="btn-cancel" style={{ flex: 1 }}>
+                                    <button onClick={() => setShowViewTeamModal(false)} className="btn-cancel"
+                                            style={{flex: 1}}>
                                         Close
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
+
+
                 </div>
             );
 
