@@ -95,6 +95,13 @@ function App() {
     const [intervalPreset,      setIntervalPreset]      = useState('weekly');
     const [rotationNamePreset,  setRotationNamePreset]  = useState('');
 
+    // Rotation filters
+    const [rotationSearchTerm,    setRotationSearchTerm]    = useState('');
+    const [rotationTeamFilter,    setRotationTeamFilter]    = useState([]);
+    const [rotationIntervalFilter,setRotationIntervalFilter]= useState([]);
+    const [showRotationTeamDropdown, setShowRotationTeamDropdown] = useState(false);
+    const [rotationTeamFilterSearch, setRotationTeamFilterSearch] = useState('');
+
     // ── NOTIFICATIONS & CONFIRMS ──────────────────────────────────────────────
     const [deleteConfirm,  setDeleteConfirm]  = useState({ open: false, user: null });
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
@@ -722,6 +729,14 @@ function App() {
             const availableMembers = rotationScope === 'team'
                 ? users.filter(u => String(u.team_id) === String(rotationFormData.team_id))
                 : selectedLocation ? users.filter(u => (u.location || '').trim().toLowerCase() === selectedLocation.name.trim().toLowerCase()) : [];
+                // ✅ filteredRotations is INSIDE the Rotations block — safe from initial render crash
+                const filteredRotations = rotations.filter(r => {
+                const scopeName       = (r.teams?.name || r.locations?.name || '').toLowerCase();
+                const matchesSearch   = r.name.toLowerCase().includes(rotationSearchTerm.toLowerCase()) || scopeName.includes(rotationSearchTerm.toLowerCase());
+                const matchesTeam     = rotationTeamFilter.length === 0 || rotationTeamFilter.includes(String(r.team_id)) || rotationTeamFilter.includes(`loc_${r.location_id}`);
+                const matchesInterval = !rotationIntervalFilter || r.interval_unit === rotationIntervalFilter;
+                return matchesSearch && matchesTeam && matchesInterval;
+            });
             return (
                 <div className="grid-container">
                     <div className="enterprise-card">
@@ -798,25 +813,65 @@ function App() {
                         </form>
                     </div>
                     <div className="enterprise-card no-padding">
-                        <table className="data-table">
-                            <thead><tr><th>Name</th><th>Scope</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>Actions</th></tr></thead>
-                            <tbody>
-                            {rotations.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations found.</td></tr> : rotations.map(r => (
-                                <tr key={r.id}>
-                                    <td><strong>{r.name}</strong></td>
-                                    <td>{r.teams?.name || r.locations?.name || 'N/A'}</td>
-                                    <td>{formatCoverageLabel(r)}</td>
-                                    <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
-                                    <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
-                                    <td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r.id)} style={{ color: 'red' }}>Delete</button></td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
+                    {/* Rotation Filter Bar */}
+                    <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 2, minWidth: '180px' }}>
+                            <input type="text" placeholder="Search rotation name or scope..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: '150px', position: 'relative' }}>
+                            <button type="button" onClick={() => setShowRotationTeamDropdown(!showRotationTeamDropdown)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                {rotationTeamFilter.length === 0 ? 'All Teams/Pools' : `${rotationTeamFilter.length} Selected`}<span>{showRotationTeamDropdown ? '▲' : '▼'}</span>
+                            </button>
+                            {showRotationTeamDropdown && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
+                                    <input type="text" placeholder="Search..." value={rotationTeamFilterSearch} onChange={e => setRotationTeamFilterSearch(e.target.value)} style={{ width: '100%', padding: '0.4rem', border: '1px solid #e5e7eb', borderRadius: '4px', fontSize: '0.75rem', marginBottom: '8px', boxSizing: 'border-box' }} />
+                                    {teams.filter(t => t.name.toLowerCase().includes(rotationTeamFilterSearch.toLowerCase())).map(t => (
+                                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                            <input type="checkbox" checked={rotationTeamFilter.includes(String(t.id))} onChange={() => { const id = String(t.id); setRotationTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); }} />
+                                            {t.name}
+                                        </label>
+                                    ))}
+                                    {locations.filter(l => l.name.toLowerCase().includes(rotationTeamFilterSearch.toLowerCase())).map(l => (
+                                        <label key={`loc_${l.id}`} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                            <input type="checkbox" checked={rotationTeamFilter.includes(`loc_${l.id}`)} onChange={() => { const id = `loc_${l.id}`; setRotationTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); }} />
+                                            📍 {l.name}
+                                        </label>
+                                    ))}
+                                    {rotationTeamFilter.length > 0 && <button onClick={() => setRotationTeamFilter([])} style={{ width: '100%', marginTop: '5px', fontSize: '0.7rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}>✕ Clear All</button>}
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: '130px' }}>
+                            <select value={rotationIntervalFilter} onChange={e => setRotationIntervalFilter(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', background: '#fff', cursor: 'pointer' }}>
+                                <option value="">All Intervals</option>
+                                <option value="day">Daily</option>
+                                <option value="week">Weekly</option>
+                                <option value="biweek">Bi-Weekly</option>
+                                <option value="month">Monthly</option>
+                            </select>
+                        </div>
+                        {(rotationSearchTerm || rotationTeamFilter.length > 0 || rotationIntervalFilter) && (
+                            <button onClick={() => { setRotationSearchTerm(''); setRotationTeamFilter([]); setRotationIntervalFilter(''); }} style={{ fontSize: '0.75rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✕ Clear Filters</button>
+                        )}
                     </div>
-                </div>
-            );
-        }
+                    <table className="data-table">
+                        <thead><tr><th>Name</th><th>Scope</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>Actions</th></tr></thead>
+                        <tbody>
+                        {filteredRotations.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => ( <tr key={r.id}>
+                                                    <td><strong>{r.name}</strong></td>
+                                                    <td>{r.teams?.name || r.locations?.name || 'N/A'}</td>
+                                                    <td>{formatCoverageLabel(r)}</td>
+                                                    <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
+                                                    <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
+                                                    <td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r.id)} style={{ color: 'red' }}>Delete</button></td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            );
+                        }
 
         if (activePage === 'Matrix') return <MatrixView />;
 
