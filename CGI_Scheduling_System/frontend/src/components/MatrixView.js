@@ -76,25 +76,31 @@ const getMonthsInRange = (dates) => {
 };
 
 // ── DRAGGABLE CODE CHIP ───────────────────────────────────────────────────────
-function DraggableCode({ code, cfg, active }) {
+function DraggableCode({ code, cfg, highlightCode, activeCode, onCodeClick }) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `code-${code}`, data: { type: 'code', code }
     });
+    const isActive = activeCode === code;
     return (
-        <Tooltip title={cfg.label} placement="bottom">
+        <Tooltip title={isActive ? `${cfg.label} — click cells to assign (Esc to cancel)` : cfg.label} placement="bottom">
             <Chip
                 ref={setNodeRef} {...attributes} {...listeners}
                 label={code} size="small"
+                onClick={(e) => { e.stopPropagation(); onCodeClick(code); }}
                 sx={{
-                    backgroundColor: active === code ? cfg.color : cfg.bg,
-                    color: active === code ? '#fff' : cfg.color,
+                    backgroundColor: isActive ? cfg.color : highlightCode === code ? cfg.color : cfg.bg,
+                    color: isActive || highlightCode === code ? '#fff' : cfg.color,
                     fontWeight: 800, fontSize: '0.68rem',
-                    cursor: 'grab', height: 24,
-                    border: `2px solid ${active === code ? cfg.color : cfg.color + '33'}`,
+                    cursor: isActive ? 'crosshair' : 'grab', height: 24,
+                    border: `2px solid ${isActive ? cfg.color : cfg.color + '33'}`,
+                    outline: isActive ? `3px solid ${cfg.color}66` : 'none',
+                    outlineOffset: '2px',
                     opacity: isDragging ? 0.35 : 1,
                     transition: 'all 0.12s',
                     touchAction: 'none',
                     userSelect: 'none',
+                    transform: isActive ? 'translateY(-2px)' : 'none',
+                    boxShadow: isActive ? `0 4px 12px ${cfg.color}55` : 'none',
                     '&:hover': { backgroundColor: cfg.color, color: '#fff', transform: 'translateY(-1px)', boxShadow: `0 2px 8px ${cfg.color}55` },
                 }}
             />
@@ -103,7 +109,7 @@ function DraggableCode({ code, cfg, active }) {
 }
 
 // ── DROPPABLE CELL ────────────────────────────────────────────────────────────
-function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTarget }) {
+function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTarget, activeCode }) {
     const { setNodeRef, isOver } = useDroppable({ id, data: { type: 'cell' } });
     const highlight = isOver || isRangeTarget;
     return (
@@ -115,10 +121,11 @@ function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTa
                     : isWeekendDay ? (empIdx % 2 === 0 ? '#f9fafb' : '#f4f4f5')
                         : 'transparent',
             borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6',
-            outline: highlight ? '2px solid #e31937' : 'none',
+            outline: highlight ? '2px solid #e31937' : activeCode ? '1px dashed #e31937' : 'none',
             outlineOffset: '-2px',
-            cursor: 'crosshair',
+            cursor: activeCode ? 'crosshair' : 'default',
             transition: 'background 0.08s',
+            '&:hover': activeCode ? { backgroundColor: '#fef2f2', outline: '2px solid #e31937' } : {},
         }}>
             {code && (
                 <Box sx={{
@@ -139,9 +146,22 @@ function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTa
 }
 
 // ── SORTABLE EMPLOYEE ROW ─────────────────────────────────────────────────────
-function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, empIdx, rangeDrag }) {
+function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, empIdx, rangeDrag, activeCode, onCellClick }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
         useSortable({ id: String(emp.id) });
+
+    const overlayRef = React.useRef(null);
+
+    // Click handler on the transparent overlay — completely above dnd-kit
+    const handleOverlayClick = React.useCallback((e) => {
+        if (!activeCode || !onCellClick) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const cellIndex = Math.floor(x / CELL);
+        if (cellIndex >= 0 && cellIndex < dates.length) {
+            onCellClick(`${emp.id}_${dates[cellIndex]}`);
+        }
+    }, [activeCode, onCellClick, dates, emp.id]);
 
     return (
         <Box ref={setNodeRef}
@@ -152,6 +172,7 @@ function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, em
                  '&:hover': { backgroundColor: '#fef9f9' },
                  borderBottom: '1px solid #f0f0f0',
                  transition: 'background 0.08s',
+                 position: 'relative',
              }}>
 
             {/* Name cell */}
@@ -183,25 +204,30 @@ function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, em
             </Box>
 
             {/* Schedule cells */}
-            {dates.map(date => {
-                const entry  = schedule[`${emp.id}_${date}`];
-                const code   = entry?.code?.toUpperCase() || null;
-                const cfg    = code ? CODE_COLORS[code] : null;
-                const dimmed = highlightCode && code !== highlightCode;
-                const isRangeTarget = rangeDrag?.empId === emp.id && rangeDrag?.dates?.includes(date);
-                return (
-                    <Box key={date} sx={{ opacity: dimmed ? 0.1 : 1, transition: 'opacity 0.12s' }}>
-                        <DroppableCell
-                            id={`${emp.id}_${date}`}
-                            code={code} cfg={cfg}
-                            isToday={date === today}
-                            isWeekendDay={isWeekend(date)}
-                            empIdx={empIdx}
-                            isRangeTarget={isRangeTarget}
-                        />
-                    </Box>
-                );
-            })}
+            <Box sx={{ display: 'flex' }}>
+                {dates.map(date => {
+                    const entry  = schedule[`${emp.id}_${date}`];
+                    const code   = entry?.code?.toUpperCase() || null;
+                    const cfg    = code ? CODE_COLORS[code] : null;
+                    const dimmed = highlightCode && code !== highlightCode;
+                    const isRangeTarget = rangeDrag?.empId === emp.id && rangeDrag?.dates?.includes(date);
+                    return (
+                        <Box key={date} sx={{ opacity: dimmed ? 0.1 : 1, transition: 'opacity 0.12s' }}>
+                            <DroppableCell
+                                id={`${emp.id}_${date}`}
+                                code={code} cfg={cfg}
+                                isToday={date === today}
+                                isWeekendDay={isWeekend(date)}
+                                empIdx={empIdx}
+                                isRangeTarget={isRangeTarget}
+                                activeCode={activeCode}
+                            />
+                        </Box>
+                    );
+                })}
+            </Box>
+
+
         </Box>
     );
 }
@@ -222,9 +248,11 @@ export default function MatrixView() {
     const [loading,        setLoading]        = useState(true);
     const [scheduleLoading,setScheduleLoading]= useState(false);
     const [activeDrag,     setActiveDrag]     = useState(null);
+    const [activeCode,     setActiveCode]     = useState(null); // click-to-assign mode
     const [rangeDrag,      setRangeDrag]      = useState(null);
     const todayRef = useRef(null);
     const dropdownRef = useRef(null);
+    const gridRef = useRef(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -237,6 +265,15 @@ export default function MatrixView() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Escape key deselects active code
+    useEffect(() => {
+        const handleKeyDown = (e) => { if (e.key === 'Escape') setActiveCode(null); };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // Grid-level click handler moved below dates/grouped declarations
+
     const today = new Date().toISOString().split('T')[0];
 
     // Compute dates based on view mode
@@ -246,7 +283,11 @@ export default function MatrixView() {
 
     const month = `2026-${String(selectedMonth + 1).padStart(2, '0')}`;
 
-    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 1 } }));
+    // When click-to-assign is active, disable dnd by requiring huge drag distance
+    // This lets pointer events reach our row-level click handler
+    const sensors = useSensors(useSensor(PointerSensor, {
+        activationConstraint: { distance: activeCode ? 99999 : 1 }
+    }));
 
     // ── FETCH EMPLOYEES ───────────────────────────────────────────────────────
     const fetchEmployees = useCallback(async () => {
@@ -334,6 +375,13 @@ export default function MatrixView() {
         }
     };
 
+    // ── CELL CLICK (click-to-assign mode) ────────────────────────────────────
+    const handleCellClick = useCallback(async (cellId) => {
+        if (!activeCode) return;
+        const [userId, date] = cellId.split('_');
+        await saveCell(Number(userId), date, activeCode);
+    }, [activeCode, saveCell]);
+
     // ── DRAG HANDLERS ─────────────────────────────────────────────────────────
     const handleDragStart = ({ active }) => {
         setActiveDrag(active);
@@ -407,6 +455,40 @@ export default function MatrixView() {
         acc[emp.team_name].push(emp);
         return acc;
     }, {});
+
+    // Grid-level click handler for click-to-assign mode
+    // Uses native DOM event listener which fires BEFORE React/dnd-kit synthetic events
+    useEffect(() => {
+        const grid = gridRef.current;
+        if (!grid) return;
+        const handler = (e) => {
+            if (!activeCode) return;
+            const rect = grid.getBoundingClientRect();
+            const scrollLeft = grid.scrollLeft;
+            const scrollTop  = grid.scrollTop;
+            const x = e.clientX - rect.left + scrollLeft;
+            const y = e.clientY - rect.top  + scrollTop;
+            const HEADER_HEIGHT = 68;
+            if (y < HEADER_HEIGHT) return;
+            if (x < NAME_W) return;
+            const cellIndex = Math.floor((x - NAME_W) / CELL);
+            if (cellIndex < 0 || cellIndex >= dates.length) return;
+            const clickedDate = dates[cellIndex];
+            let runningY = HEADER_HEIGHT;
+            for (const [, emps] of Object.entries(grouped)) {
+                runningY += 28; // team header row height
+                for (const emp of emps) {
+                    if (y >= runningY && y < runningY + CELL) {
+                        handleCellClick(`${emp.id}_${clickedDate}`);
+                        return;
+                    }
+                    runningY += CELL;
+                }
+            }
+        };
+        grid.addEventListener('click', handler, { capture: true });
+        return () => grid.removeEventListener('click', handler, { capture: true });
+    }, [activeCode, dates, grouped, handleCellClick]);
 
     const absenceCount = Object.fromEntries(
         dates.map(date => [
@@ -618,10 +700,29 @@ export default function MatrixView() {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 'auto', flexWrap: 'wrap', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75 }}>
                         <Typography fontSize="0.65rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.06em" sx={{ mr: 0.5 }}>Drag to assign:</Typography>
                         {Object.entries(CODE_COLORS).map(([code, cfg]) => (
-                            <DraggableCode key={code} code={code} cfg={cfg} active={highlightCode} />
+                            <DraggableCode
+                                key={code} code={code} cfg={cfg}
+                                highlightCode={highlightCode}
+                                activeCode={activeCode}
+                                onCodeClick={(c) => setActiveCode(prev => prev === c ? null : c)}
+                            />
                         ))}
                     </Box>
                 </Box>
+
+                {/* Active code banner */}
+                {activeCode && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, px: 2, py: 1, backgroundColor: CODE_COLORS[activeCode]?.bg, border: `2px solid ${CODE_COLORS[activeCode]?.color}`, borderRadius: '8px' }}>
+                        <Box sx={{ width: 22, height: 22, borderRadius: '4px', backgroundColor: CODE_COLORS[activeCode]?.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography fontSize="0.65rem" fontWeight={800} color="#fff">{activeCode}</Typography>
+                        </Box>
+                        <Typography fontSize="0.85rem" fontWeight={600} color={CODE_COLORS[activeCode]?.color}>
+                            {activeCode === 'CLEAR' ? 'Click any cell to clear it' : `Click any cell to assign "${CODE_COLORS[activeCode]?.label}"`}
+                        </Typography>
+                        <Typography fontSize="0.78rem" color="#9ca3af" sx={{ ml: 'auto' }}>Press Esc or click the chip again to cancel</Typography>
+                        <Box onClick={() => setActiveCode(null)} sx={{ cursor: 'pointer', color: CODE_COLORS[activeCode]?.color, fontWeight: 700, fontSize: '1rem', lineHeight: 1, px: 0.5, '&:hover': { opacity: 0.7 } }}>✕</Box>
+                    </Box>
+                )}
 
                 {/* Range mode — empty state */}
                 {viewMode === 'range' && !rangeValid && (
@@ -641,7 +742,7 @@ export default function MatrixView() {
                 {/* Matrix grid — show when dates are available */}
                 {dates.length > 0 && !rangeTooBig && (
                     <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                        <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+                        <Box ref={gridRef} sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', cursor: activeCode ? 'crosshair' : 'default' }}>
                             <Box sx={{ minWidth: NAME_W + dates.length * CELL }}>
 
                                 {/* DATE HEADER */}
