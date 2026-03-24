@@ -4,7 +4,6 @@ import Header from './components/Header';
 import './styles/Dashboard.css';
 import MatrixView from './components/MatrixView';
 import './App.css'
-import { Routes, Route, Navigate } from 'react-router-dom';
 
 const ROTATION_NAME_OPTIONS = [
     'Team-Level', 'Sub-Team', 'On-Call', 'Business Domain', 'Cross-Team Analyst'
@@ -76,7 +75,6 @@ function App() {
     const [showViewTeamModal,     setShowViewTeamModal]     = useState(false);
     const [teamDeleteConfirm,     setTeamDeleteConfirm]     = useState({ open: false, teamId: null, teamName: '' });
     const [showModalMemberDropdown,setShowModalMemberDropdown]= useState(false);
-    // ── TEAM FILTER ────────────────────────────────────────────────────────────
     const [teamSearchTerm,        setTeamSearchTerm]        = useState('');
     const [leadFilter,            setLeadFilter]            = useState([]);
     const [memberFilter,          setMemberFilter]          = useState([]);
@@ -117,67 +115,11 @@ function App() {
         }
     }, [isLoggedIn, activePage]);
 
-    useEffect(() => {
-        const savedToken = localStorage.getItem('token');
-        const savedUser = localStorage.getItem('user');
-
-        if (savedToken && savedUser) {
-            setIsLoggedIn(true);
-            setCurrentUser(JSON.parse(savedUser));
-        }
-    }, []);
-
-    // ── DATA FETCHERS WITH AUTH ──────────────────────────────────────────────
-
-    const fetchUsers = async () => {
-        try {
-            const r = await fetch('/api/users', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const d = await r.json();
-            setUsers(Array.isArray(d) ? d : []);
-        } catch { setUsers([]); }
-    };
-
-    const fetchTeams = async () => {
-        try {
-            const r = await fetch('/api/teams', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const d = await r.json();
-            setTeams(Array.isArray(d) ? d : []);
-        } catch { setTeams([]); }
-    };
-
-    const fetchRoles = async () => {
-        try {
-            const r = await fetch('/api/roles', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const d = await r.json();
-            setRoles(Array.isArray(d) ? d : []);
-        } catch { setRoles([]); }
-    };
-
-    const fetchLocations = async () => {
-        try {
-            const r = await fetch('/api/locations', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const d = await r.json();
-            setLocations(Array.isArray(d) ? d : []);
-        } catch { setLocations([]); }
-    };
-
-    const fetchRotations = async () => {
-        try {
-            const r = await fetch('/api/rotations', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const d = await r.json();
-            setRotations(Array.isArray(d) ? d : []);
-        } catch { setRotations([]); }
-    };
+    const fetchUsers     = async () => { try { const r = await fetch('/api/users');     const d = await r.json(); setUsers(Array.isArray(d) ? d : []);     } catch { setUsers([]); } };
+    const fetchTeams     = async () => { try { const r = await fetch('/api/teams');     const d = await r.json(); setTeams(Array.isArray(d) ? d : []);     } catch { setTeams([]); } };
+    const fetchRoles     = async () => { try { const r = await fetch('/api/roles');     const d = await r.json(); setRoles(Array.isArray(d) ? d : []);     } catch { setRoles([]); } };
+    const fetchLocations = async () => { try { const r = await fetch('/api/locations'); const d = await r.json(); setLocations(Array.isArray(d) ? d : []); } catch { setLocations([]); } };
+    const fetchRotations = async () => { try { const r = await fetch('/api/rotations'); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); } };
 
     const inferIntervalPreset = (unit, count) => {
         if (unit === 'day'    && count === 1) return 'daily';
@@ -186,13 +128,12 @@ function App() {
         return 'custom';
     };
 
-    const handleLoginSuccess = (userData) => {
-        // Flatten roles so it's an array of strings like ['Administrator']
-        const roles = userData.user_roles?.map(ur => ur.roles?.name) || [];
-        const cleanUser = { ...userData, roleNames: roles };
-
-        setCurrentUser(cleanUser);
-        setIsLoggedIn(true);
+    const handleAdminLogin = ({ identifier, password }) => {
+        if (identifier === 'admin@cgi.com' && password === 'AdminAdmin902') {
+            setCurrentUser({ name: 'CGI Administrator', role: 'Admin', email: identifier });
+            setIsLoggedIn(true); return { ok: true };
+        }
+        return { ok: false, error: 'Access Denied.' };
     };
 
     const showNotification = (message, type = 'success') => {
@@ -233,14 +174,7 @@ function App() {
         const method = editingUser ? 'PUT' : 'POST';
         const url    = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
         try {
-            const res  = await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}` // ADDED
-                },
-                body: JSON.stringify(userForm)
-            });
+            const res  = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userForm) });
             const data = await res.json();
             if (!res.ok) { setUserFormErrors(data.errors || { general: data.error || 'An error occurred.' }); return; }
             setUserFormSuccess(editingUser ? 'User updated successfully.' : 'User created successfully.');
@@ -253,10 +187,7 @@ function App() {
         const user = deleteConfirm.user;
         setDeleteConfirm({ open: false, user: null });
         try {
-            const res  = await fetch(`/api/users/${user.id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // ADDED
-            });
+            const res  = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
             const data = await res.json();
             if (res.ok) { fetchUsers(); showNotification('User deleted successfully.'); }
             else showNotification(data.error || 'Failed to delete user.', 'error');
@@ -279,14 +210,7 @@ function App() {
         e.preventDefault();
         const method = editingTeam ? 'PUT' : 'POST';
         const url    = editingTeam ? `/api/teams/${editingTeam.id}` : '/api/teams';
-        const r = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}` // ADDED
-            },
-            body: JSON.stringify(teamFormData)
-        });
+        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(teamFormData) });
         if (r.ok) { fetchTeams(); closeTeamModal(); }
     };
     const handleDeleteTeam = (id) => {
@@ -297,10 +221,7 @@ function App() {
         const { teamId } = teamDeleteConfirm;
         setTeamDeleteConfirm({ open: false, teamId: null, teamName: '' });
         try {
-            const r = await fetch(`/api/teams/${teamId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // ADDED
-            });
+            const r = await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
             if (r.ok) { fetchTeams(); showNotification('Team deleted successfully.'); }
             else { const data = await r.json(); showNotification(data.error || 'Failed to delete team.', 'error'); }
         } catch { showNotification('Network error. Please try again.', 'error'); }
@@ -375,8 +296,6 @@ function App() {
 
     // ── RENDER ────────────────────────────────────────────────────────────────
     const renderPageContent = () => {
-        console.log("Debug - Current User:", currentUser); // ADD THIS LINE
-        console.log("Debug - Active Page:", activePage);   // ADD THIS LINE
 
         // ✅ SAFE MEMBER PARSER — handles array, JSON string, or null
         const parseMembers = (members) => {
@@ -1009,6 +928,7 @@ function App() {
         return <div className="enterprise-card"><h2>{activePage} Management</h2><p>Development in progress.</p></div>;
     };
 
+    if (!isLoggedIn) return <Login onLogin={handleAdminLogin} />;
 
     const NotificationBanner = () => notification.show ? (
         <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999, background: notification.type === 'success' ? '#ecfdf5' : '#fee2e2', color: notification.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${notification.type === 'success' ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', padding: '0.85rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '0.5rem', maxWidth: '360px' }}>
@@ -1049,55 +969,16 @@ function App() {
     );
 
     return (
-
-            <div className="dashboard-root">
-                <NotificationBanner />
-                <DeleteConfirmModal />
-                <TeamDeleteConfirmModal />
-
-                <Routes>
-                    {/* LOGIN ROUTE */}
-                    <Route
-                        path="/login"
-                        element={
-                            !isLoggedIn ? (
-                                <Login onLoginSuccess={handleLoginSuccess} />                            ) : (
-                                <Navigate to="/dashboard" />
-                            )
-                        }
-                    />
-
-                    {/* DASHBOARD/MAIN APP ROUTE */}
-                    <Route
-                        path="/dashboard"
-                        element={
-                            isLoggedIn ? (
-                                <>
-                                    <Header
-                                        user={currentUser}
-                                        activePage={activePage}
-                                        onNavigate={setActivePage}
-                                        onLogout={() => {
-                                            localStorage.removeItem('token');
-                                            localStorage.removeItem('user');
-                                            setIsLoggedIn(false);
-                                        }}
-                                    />
-                                    <main className="main-content">
-                                        {renderPageContent()}
-                                    </main>
-                                </>
-                            ) : (
-                                <Navigate to="/login" />
-                            )
-                        }
-                    />
-
-                    {/* DEFAULT REDIRECT */}
-                    <Route path="*" element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} />} />
-                </Routes>
-            </div>
-
+        <div className="dashboard-root">
+            <NotificationBanner />
+            <DeleteConfirmModal />
+            <TeamDeleteConfirmModal />
+            <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
+            <main className="main-content">
+                <header className="page-header"><h1>{activePage} Management</h1></header>
+                {renderPageContent()}
+            </main>
+        </div>
     );
 }
 
