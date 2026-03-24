@@ -31,6 +31,8 @@ const DEFAULT_ROTATION_FORM = {
 };
 const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [], description: '' };
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
+const DEFAULT_ROTATION_DELETE_CONFIRM = { open: false, rotationId: null, rotationName: '' };
+const DEFAULT_ROTATION_POPUP = { open: false, type: 'success', title: '', message: '' };
 
 function App() {
     const [users,      setUsers]      = useState([]);
@@ -88,17 +90,16 @@ function App() {
 
     // ── ROTATION STATE ────────────────────────────────────────────────────────
     const [rotationFormData,    setRotationFormData]    = useState(DEFAULT_ROTATION_FORM);
-    const [rotationScope,       setRotationScope]       = useState('team');
     const [editingRotation,     setEditingRotation]     = useState(null);
-    const [rotationFormError,   setRotationFormError]   = useState('');
-    const [rotationFormSuccess, setRotationFormSuccess] = useState('');
     const [intervalPreset,      setIntervalPreset]      = useState('weekly');
     const [rotationNamePreset,  setRotationNamePreset]  = useState('');
+    const [rotationDeleteConfirm, setRotationDeleteConfirm] = useState(DEFAULT_ROTATION_DELETE_CONFIRM);
+    const [rotationPopup,         setRotationPopup]         = useState(DEFAULT_ROTATION_POPUP);
 
     // Rotation filters
     const [rotationSearchTerm,    setRotationSearchTerm]    = useState('');
     const [rotationTeamFilter,    setRotationTeamFilter]    = useState([]);
-    const [rotationIntervalFilter,setRotationIntervalFilter]= useState([]);
+    const [rotationIntervalFilter,setRotationIntervalFilter]= useState('');
     const [showRotationTeamDropdown, setShowRotationTeamDropdown] = useState(false);
     const [rotationTeamFilterSearch, setRotationTeamFilterSearch] = useState('');
 
@@ -106,7 +107,11 @@ function App() {
     const [deleteConfirm,  setDeleteConfirm]  = useState({ open: false, user: null });
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
 
-    useEffect(() => { closeTeamModal(); }, [activePage]);
+    useEffect(() => {
+        closeTeamModal();
+        closeRotationPopup();
+        setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+    }, [activePage]);
 
     useEffect(() => {
         if (isLoggedIn) {
@@ -140,6 +145,15 @@ function App() {
         setNotification({ show: true, message, type });
         setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 4000);
     };
+
+    const resetRotationForm = () => {
+        setRotationFormData(DEFAULT_ROTATION_FORM);
+        setEditingRotation(null);
+        setIntervalPreset('weekly');
+        setRotationNamePreset('');
+    };
+    const closeRotationPopup = () => setRotationPopup(DEFAULT_ROTATION_POPUP);
+    const showRotationPopup = (type, title, message) => setRotationPopup({ open: true, type, title, message });
 
     // ── USER HANDLERS ─────────────────────────────────────────────────────────
     const openCreateUser = () => { setEditingUser(null); setUserForm(DEFAULT_USER_FORM); setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true); };
@@ -230,39 +244,105 @@ function App() {
 
     // ── ROTATION HANDLERS ─────────────────────────────────────────────────────
     const handleSaveRotation = async (e) => {
-        e.preventDefault(); setRotationFormError(''); setRotationFormSuccess('');
-        if (!rotationFormData.name.trim())                                 { setRotationFormError('Rotation name is required.'); return; }
-        if (rotationScope === 'team'     && !rotationFormData.team_id)     { setRotationFormError('Assigned team is required.'); return; }
-        if (rotationScope === 'location' && !rotationFormData.location_id) { setRotationFormError('Assigned pool/location is required.'); return; }
-        if (!rotationFormData.start_date)                                  { setRotationFormError('Start date is required.'); return; }
+        e.preventDefault();
+        closeRotationPopup();
+        const isEditing = Boolean(editingRotation);
+        const errorTitle = isEditing ? 'Unable to update rotation' : 'Unable to create rotation';
+
+        if (!rotationFormData.name.trim()) {
+            showRotationPopup('error', errorTitle, 'Rotation name is required.');
+            return;
+        }
+        if (!rotationFormData.team_id) {
+            showRotationPopup('error', errorTitle, 'Assigned team is required.');
+            return;
+        }
+        if (!rotationFormData.start_date) {
+            showRotationPopup('error', errorTitle, 'Start date is required.');
+            return;
+        }
+
         const assignedMembers = (rotationFormData.assigned_member_ids || []).map(id => String(id)).filter(Boolean);
-        if (!assignedMembers.length)                                       { setRotationFormError('Assign at least one member.'); return; }
+        if (!assignedMembers.length) {
+            showRotationPopup('error', errorTitle, 'Assign at least one member.');
+            return;
+        }
+
         const intervalCount = Number.parseInt(rotationFormData.interval_count, 10);
-        if (Number.isNaN(intervalCount) || intervalCount < 1)             { setRotationFormError('Rotation interval must be at least 1.'); return; }
-        const payload = { ...rotationFormData, team_id: rotationScope === 'team' ? rotationFormData.team_id : null, location_id: rotationScope === 'location' ? rotationFormData.location_id : null, assigned_member_ids: assignedMembers.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id)), interval_count: intervalCount };
-        const method = editingRotation ? 'PUT' : 'POST';
-        const url    = editingRotation ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
-        const r    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) { setRotationFormError(Array.isArray(data.errors) ? data.errors.join(' ') : data.error || 'An error occurred.'); return; }
-        setRotationFormSuccess(editingRotation ? 'Rotation updated successfully.' : 'Rotation created successfully.');
-        fetchRotations();
-        setRotationFormData(DEFAULT_ROTATION_FORM); setEditingRotation(null); setRotationScope('team'); setIntervalPreset('weekly'); setRotationNamePreset('');
-        setTimeout(() => setRotationFormSuccess(''), 1500);
+        if (Number.isNaN(intervalCount) || intervalCount < 1) {
+            showRotationPopup('error', errorTitle, 'Rotation interval must be at least 1.');
+            return;
+        }
+
+        const payload = {
+            ...rotationFormData,
+            team_id: rotationFormData.team_id,
+            location_id: null,
+            assigned_member_ids: assignedMembers.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id)),
+            interval_count: intervalCount
+        };
+        const method = isEditing ? 'PUT' : 'POST';
+        const url = isEditing ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
+
+        try {
+            const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                showRotationPopup(
+                    'error',
+                    errorTitle,
+                    Array.isArray(data.errors) ? data.errors.join(' ') : data.error || 'An error occurred while saving the rotation.'
+                );
+                return;
+            }
+
+            await fetchRotations();
+            resetRotationForm();
+            showRotationPopup(
+                'success',
+                isEditing ? 'Rotation updated' : 'Rotation created',
+                isEditing ? 'Rotation updated successfully.' : 'Rotation created successfully.'
+            );
+        } catch {
+            showRotationPopup('error', errorTitle, 'Network error. Please try again.');
+        }
     };
-    const handleDeleteRotation = async (id) => {
-        if (!window.confirm('Delete this rotation?')) return;
-        const r = await fetch(`/api/rotations/${id}`, { method: 'DELETE' });
-        if (r.ok) fetchRotations();
+    const handleDeleteRotation = (rotation) => {
+        closeRotationPopup();
+        setRotationDeleteConfirm({
+            open: true,
+            rotationId: rotation.id,
+            rotationName: rotation.name || 'this rotation'
+        });
+    };
+    const handleConfirmDeleteRotation = async () => {
+        const { rotationId, rotationName } = rotationDeleteConfirm;
+        setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+        if (!rotationId) return;
+
+        try {
+            const r = await fetch(`/api/rotations/${rotationId}`, { method: 'DELETE' });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                showRotationPopup('error', 'Unable to delete rotation', data.error || 'An error occurred while deleting the rotation.');
+                return;
+            }
+
+            await fetchRotations();
+            if (editingRotation?.id === rotationId) resetRotationForm();
+            showRotationPopup('success', 'Rotation deleted', `Rotation "${rotationName}" deleted successfully.`);
+        } catch {
+            showRotationPopup('error', 'Unable to delete rotation', 'Network error. Please try again.');
+        }
     };
     const openEditRotation = (rotation) => {
         setEditingRotation(rotation);
-        setRotationScope(rotation.team_id ? 'team' : 'location');
         setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
         setRotationNamePreset(ROTATION_NAME_OPTIONS.includes(rotation.name) ? rotation.name : 'custom');
-        setRotationFormError(''); setRotationFormSuccess('');
+        closeRotationPopup();
+        setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
         setRotationFormData({
-            name: rotation.name || '', team_id: rotation.team_id || '', location_id: rotation.location_id || '',
+            name: rotation.name || '', team_id: rotation.team_id || '', location_id: '',
             start_date: rotation.start_date?.split('T')[0] || new Date().toISOString().split('T')[0],
             interval_unit: rotation.interval_unit || 'week', interval_count: rotation.interval_count || 1,
             status: rotation.status || 'active',
@@ -725,15 +805,12 @@ function App() {
 
         // ── ROTATIONS ─────────────────────────────────────────────────────────
         if (activePage === 'Rotations') {
-            const selectedLocation = locations.find(l => String(l.id) === String(rotationFormData.location_id));
-            const availableMembers = rotationScope === 'team'
-                ? users.filter(u => String(u.team_id) === String(rotationFormData.team_id))
-                : selectedLocation ? users.filter(u => (u.location || '').trim().toLowerCase() === selectedLocation.name.trim().toLowerCase()) : [];
+            const availableMembers = users.filter(u => String(u.team_id) === String(rotationFormData.team_id));
                 // ✅ filteredRotations is INSIDE the Rotations block — safe from initial render crash
                 const filteredRotations = rotations.filter(r => {
-                const scopeName       = (r.teams?.name || r.locations?.name || '').toLowerCase();
-                const matchesSearch   = r.name.toLowerCase().includes(rotationSearchTerm.toLowerCase()) || scopeName.includes(rotationSearchTerm.toLowerCase());
-                const matchesTeam     = rotationTeamFilter.length === 0 || rotationTeamFilter.includes(String(r.team_id)) || rotationTeamFilter.includes(`loc_${r.location_id}`);
+                const teamName        = (r.teams?.name || '').toLowerCase();
+                const matchesSearch   = r.name.toLowerCase().includes(rotationSearchTerm.toLowerCase()) || teamName.includes(rotationSearchTerm.toLowerCase());
+                const matchesTeam     = rotationTeamFilter.length === 0 || rotationTeamFilter.includes(String(r.team_id));
                 const matchesInterval = !rotationIntervalFilter || r.interval_unit === rotationIntervalFilter;
                 return matchesSearch && matchesTeam && matchesInterval;
             });
@@ -741,8 +818,6 @@ function App() {
                 <div className="grid-container">
                     <div className="enterprise-card">
                         <h3>{editingRotation ? 'Edit Rotation' : 'New Rotation'}</h3>
-                        {rotationFormError   && <div style={{ background: '#fee2e2', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem' }}>{rotationFormError}</div>}
-                        {rotationFormSuccess && <div style={{ background: '#ecfdf5', color: '#065f46', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', fontWeight: 600 }}>{rotationFormSuccess}</div>}
                         <form onSubmit={handleSaveRotation}>
                             <div className="form-group">
                                 <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
@@ -754,32 +829,15 @@ function App() {
                                 {rotationNamePreset === 'custom' && <input className="enterprise-input" placeholder="Custom rotation name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} style={{ marginTop: '0.6rem' }} required />}
                             </div>
                             <div className="form-group">
-                                <label>Assigned Scope <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={rotationScope} onChange={e => { const s = e.target.value; setRotationScope(s); setRotationFormData(prev => ({ ...prev, team_id: s === 'team' ? prev.team_id : '', location_id: s === 'location' ? prev.location_id : '', assigned_member_ids: [] })); }}>
-                                    <option value="team">Team / Sub-Team</option>
-                                    <option value="location">Pool (Location)</option>
+                                <label>Assigned Team <span style={{ color: '#e31937' }}>*</span></label>
+                                <select className="enterprise-input" value={rotationFormData.team_id} onChange={e => setRotationFormData({ ...rotationFormData, team_id: e.target.value, assigned_member_ids: [] })} required>
+                                    <option value="">Select team</option>
+                                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                 </select>
                             </div>
-                            {rotationScope === 'team' ? (
-                                <div className="form-group">
-                                    <label>Assigned Team <span style={{ color: '#e31937' }}>*</span></label>
-                                    <select className="enterprise-input" value={rotationFormData.team_id} onChange={e => setRotationFormData({ ...rotationFormData, team_id: e.target.value, assigned_member_ids: [] })} required>
-                                        <option value="">Select team</option>
-                                        {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
-                                </div>
-                            ) : (
-                                <div className="form-group">
-                                    <label>Assigned Pool <span style={{ color: '#e31937' }}>*</span></label>
-                                    <select className="enterprise-input" value={rotationFormData.location_id} onChange={e => setRotationFormData({ ...rotationFormData, location_id: e.target.value, assigned_member_ids: [] })} required>
-                                        <option value="">Select pool</option>
-                                        {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                                    </select>
-                                </div>
-                            )}
                             <div className="form-group">
                                 <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
-                                {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>{rotationScope === 'team' ? 'Select a team to load members.' : 'Select a pool/location to load members.'}</p> : (
+                                {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Select a team to load members.</p> : (
                                     <select className="enterprise-input" multiple size={Math.min(6, availableMembers.length)} value={rotationFormData.assigned_member_ids} onChange={e => setRotationFormData({ ...rotationFormData, assigned_member_ids: Array.from(e.target.selectedOptions).map(o => o.value) })}>
                                         {availableMembers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                     </select>
@@ -804,11 +862,11 @@ function App() {
                             <div className="form-group"><label>Escalation Tiers (optional)</label><textarea className="enterprise-input" rows="2" placeholder="Tier 1, Tier 2 or JSON" value={rotationFormData.escalation_tiers} onChange={e => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })} /><p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>Comma-separated list or JSON array.</p></div>
                             <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <input type="checkbox" checked={rotationFormData.allow_double_booking} onChange={e => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })} />
-                                <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking</span>
+                                <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking (optional)</span>
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
-                                {editingRotation && <button type="button" onClick={() => { setEditingRotation(null); setRotationFormData(DEFAULT_ROTATION_FORM); setRotationScope('team'); setIntervalPreset('weekly'); setRotationNamePreset(''); setRotationFormError(''); setRotationFormSuccess(''); }} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
+                                {editingRotation && <button type="button" onClick={() => { resetRotationForm(); closeRotationPopup(); }} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
                             </div>
                         </form>
                     </div>
@@ -816,11 +874,11 @@ function App() {
                     {/* Rotation Filter Bar */}
                     <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
                         <div style={{ flex: 2, minWidth: '180px' }}>
-                            <input type="text" placeholder="Search rotation name or scope..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
+                            <input type="text" placeholder="Search rotation name or team..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
                         </div>
                         <div style={{ flex: 1, minWidth: '150px', position: 'relative' }}>
                             <button type="button" onClick={() => setShowRotationTeamDropdown(!showRotationTeamDropdown)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                {rotationTeamFilter.length === 0 ? 'All Teams/Pools' : `${rotationTeamFilter.length} Selected`}<span>{showRotationTeamDropdown ? '▲' : '▼'}</span>
+                                {rotationTeamFilter.length === 0 ? 'All Teams' : `${rotationTeamFilter.length} Selected`}<span>{showRotationTeamDropdown ? '▲' : '▼'}</span>
                             </button>
                             {showRotationTeamDropdown && (
                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
@@ -829,12 +887,6 @@ function App() {
                                         <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
                                             <input type="checkbox" checked={rotationTeamFilter.includes(String(t.id))} onChange={() => { const id = String(t.id); setRotationTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); }} />
                                             {t.name}
-                                        </label>
-                                    ))}
-                                    {locations.filter(l => l.name.toLowerCase().includes(rotationTeamFilterSearch.toLowerCase())).map(l => (
-                                        <label key={`loc_${l.id}`} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                            <input type="checkbox" checked={rotationTeamFilter.includes(`loc_${l.id}`)} onChange={() => { const id = `loc_${l.id}`; setRotationTeamFilter(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); }} />
-                                            📍 {l.name}
                                         </label>
                                     ))}
                                     {rotationTeamFilter.length > 0 && <button onClick={() => setRotationTeamFilter([])} style={{ width: '100%', marginTop: '5px', fontSize: '0.7rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}>✕ Clear All</button>}
@@ -855,15 +907,15 @@ function App() {
                         )}
                     </div>
                     <table className="data-table">
-                        <thead><tr><th>Name</th><th>Scope</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Name</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>Actions</th></tr></thead>
                         <tbody>
                         {filteredRotations.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => ( <tr key={r.id}>
                                                     <td><strong>{r.name}</strong></td>
-                                                    <td>{r.teams?.name || r.locations?.name || 'N/A'}</td>
+                                                    <td>{r.teams?.name || 'N/A'}</td>
                                                     <td>{formatCoverageLabel(r)}</td>
                                                     <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
                                                     <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
-                                                    <td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r.id)} style={{ color: 'red' }}>Delete</button></td>
+                                                    <td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button></td>
                                                 </tr>
                                             ))}
                                             </tbody>
@@ -968,11 +1020,48 @@ function App() {
         </div>
     );
 
+    const RotationPopupModal = () => !rotationPopup.open ? null : (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={closeRotationPopup}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '2rem', maxWidth: '420px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: rotationPopup.type === 'success' ? '#ecfdf5' : '#fee2e2', color: rotationPopup.type === 'success' ? '#065f46' : '#991b1b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 700, flexShrink: 0 }}>
+                        {rotationPopup.type === 'success' ? 'OK' : '!'}
+                    </div>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>{rotationPopup.title}</h3>
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>{rotationPopup.message}</p>
+                    </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={closeRotationPopup} style={{ minWidth: '120px', padding: '0.7rem 1rem', borderRadius: '6px', border: 'none', background: rotationPopup.type === 'success' ? '#065f46' : '#e31937', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Close</button>
+                </div>
+            </div>
+        </div>
+    );
+
+    const RotationDeleteConfirmModal = () => !rotationDeleteConfirm.open ? null : (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '2rem', maxWidth: '420px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', color: '#991b1b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 700, flexShrink: 0 }}>!</div>
+                    <div><h3 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>Delete Rotation</h3><p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>Are you sure you want to delete <strong>{rotationDeleteConfirm.rotationName || 'this rotation'}</strong>?</p></div>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: '#6b7280', background: '#f9fafb', borderRadius: '6px', padding: '0.75rem', margin: '0 0 1.5rem' }}>This action cannot be undone. The rotation schedule and its configuration will be permanently removed.</p>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={() => setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM)} style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Cancel</button>
+                    <button onClick={handleConfirmDeleteRotation} style={{ flex: 1, padding: '0.7rem', borderRadius: '6px', border: 'none', background: '#e31937', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Delete Rotation</button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="dashboard-root">
             <NotificationBanner />
             <DeleteConfirmModal />
             <TeamDeleteConfirmModal />
+            <RotationPopupModal />
+            <RotationDeleteConfirmModal />
             <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
             <main className="main-content">
                 <header className="page-header"><h1>{activePage} Management</h1></header>

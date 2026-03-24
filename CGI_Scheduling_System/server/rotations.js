@@ -112,7 +112,6 @@ const parseRotationPayload = (payload) => {
     const name = (payload.name || '').trim();
     const rotationTypeId = parseOptionalInt(payload.rotation_type_id);
     const teamId = parseOptionalInt(payload.team_id);
-    const locationId = parseOptionalInt(payload.location_id);
     const startDate = parseRequiredDate(payload.start_date);
     const intervalUnit = payload.interval_unit;
     const intervalCount =
@@ -136,11 +135,7 @@ const parseRotationPayload = (payload) => {
         errors.push('Interval count must be at least 1.');
     if (!ALLOWED_STATUS.has(status)) errors.push('Status is invalid.');
 
-    const hasTeam = teamId !== null;
-    const hasLocation = locationId !== null;
-
-    if (hasTeam === hasLocation)
-        errors.push('Must choose either team OR location (not both).');
+    if (teamId === null) errors.push('Assigned team is required.');
 
     if (invalidMemberIds) errors.push('Assigned members list is invalid.');
     if (!assignedMemberIds.length)
@@ -152,7 +147,7 @@ const parseRotationPayload = (payload) => {
             name,
             rotation_type_id: rotationTypeId,
             team_id: teamId,
-            location_id: locationId,
+            location_id: null,
             start_date: startDate,
             interval_unit: intervalUnit,
             interval_count: intervalCount,
@@ -214,17 +209,6 @@ const validateMembersForScope = async (
     }
 
     return { members };
-};
-
-const validateUniqueName = async (name, rotationId, errors) => {
-    if (!name) return;
-    const existing = await prisma.rotations.findFirst({
-        where: {
-            name: { equals: name, mode: 'insensitive' },
-            ...(rotationId ? { id: { not: rotationId } } : {}),
-        },
-    });
-    if (existing) errors.push('Rotation name must be unique.');
 };
 
 const validateDoubleBooking = async (
@@ -324,24 +308,12 @@ router.post('/', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
-    await validateUniqueName(data.name, null, errors);
     await validateMembersForScope(
         data.assigned_member_ids,
         data.team_id,
         data.location_id,
         errors
     );
-    if (!data.allow_double_booking) {
-        await validateDoubleBooking(
-            null,
-            data.assigned_member_ids,
-            data.start_date,
-            data.interval_unit,
-            data.interval_count || 1,
-            errors
-        );
-    }
-
     if (errors.length) return res.status(400).json({ errors });
 
     try {
@@ -361,24 +333,12 @@ router.put('/:id', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
-    await validateUniqueName(data.name, id, errors);
     await validateMembersForScope(
         data.assigned_member_ids,
         data.team_id,
         data.location_id,
         errors
     );
-    if (!data.allow_double_booking) {
-        await validateDoubleBooking(
-            id,
-            data.assigned_member_ids,
-            data.start_date,
-            data.interval_unit,
-            data.interval_count || 1,
-            errors
-        );
-    }
-
     if (errors.length) return res.status(400).json({ errors });
 
     try {
