@@ -44,7 +44,7 @@ const Login = ({ onLoginSuccess }) => {// Removed onLogin prop as we handle it h
                 }
 
                 // 3. Redirect to Dashboard
-                navigate('/dashboard');
+                navigate('/dashboard', { replace: true });
             } else {
                 setError(data.error || "Invalid username or password.");
             }

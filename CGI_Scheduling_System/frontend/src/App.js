@@ -4,6 +4,8 @@ import Header from './components/Header';
 import './styles/Dashboard.css';
 import MatrixView from './components/MatrixView';
 import './App.css'
+import { Routes, Route, Navigate } from 'react-router-dom';
+
 
 const ROTATION_NAME_OPTIONS = [
     'Team-Level', 'Sub-Team', 'On-Call', 'Business Domain', 'Cross-Team Analyst'
@@ -33,6 +35,17 @@ const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [],
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
 
 function App() {
+
+    useEffect(() => {
+        const savedToken = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+
+        if (savedToken && savedUser) {
+            setIsLoggedIn(true);
+            setCurrentUser(JSON.parse(savedUser));
+        }
+    }, []);
+
     const [users,      setUsers]      = useState([]);
     const [teams,      setTeams]      = useState([]);
     const [roles,      setRoles]      = useState([]);
@@ -128,12 +141,10 @@ function App() {
         return 'custom';
     };
 
-    const handleAdminLogin = ({ identifier, password }) => {
-        if (identifier === 'admin@cgi.com' && password === 'AdminAdmin902') {
-            setCurrentUser({ name: 'CGI Administrator', role: 'Admin', email: identifier });
-            setIsLoggedIn(true); return { ok: true };
-        }
-        return { ok: false, error: 'Access Denied.' };
+    const handleLoginSuccess = (userData) => {
+        // Just accept the data from Login.js
+        setCurrentUser(userData);
+        setIsLoggedIn(true);
     };
 
     const showNotification = (message, type = 'success') => {
@@ -928,8 +939,6 @@ function App() {
         return <div className="enterprise-card"><h2>{activePage} Management</h2><p>Development in progress.</p></div>;
     };
 
-    if (!isLoggedIn) return <Login onLogin={handleAdminLogin} />;
-
     const NotificationBanner = () => notification.show ? (
         <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999, background: notification.type === 'success' ? '#ecfdf5' : '#fee2e2', color: notification.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${notification.type === 'success' ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', padding: '0.85rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '0.5rem', maxWidth: '360px' }}>
             <span>{notification.type === 'success' ? '✓' : '✕'}</span>{notification.message}
@@ -973,11 +982,43 @@ function App() {
             <NotificationBanner />
             <DeleteConfirmModal />
             <TeamDeleteConfirmModal />
-            <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
-            <main className="main-content">
-                <header className="page-header"><h1>{activePage} Management</h1></header>
-                {renderPageContent()}
-            </main>
+
+            <Routes>
+                {/* 1. Login Route: Show only if NOT logged in */}
+                <Route
+                    path="/login"
+                    element={!isLoggedIn ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/dashboard" replace />}
+                />
+
+                {/* 2. Dashboard Route: Show only if logged in */}
+                <Route
+                    path="/dashboard"
+                    element={isLoggedIn ? (
+                        <>
+                            <Header
+                                user={currentUser}
+                                activePage={activePage}
+                                onNavigate={setActivePage}
+                                onLogout={() => {
+                                    localStorage.clear();
+                                    setIsLoggedIn(false);
+                                }}
+                            />
+                            <main className="main-content">
+                                <header className="page-header">
+                                    <h1>{activePage} Management</h1>
+                                </header>
+                                {renderPageContent()}
+                            </main>
+                        </>
+                    ) : (
+                        <Navigate to="/login" replace />
+                    )}
+                />
+
+                {/* 3. Catch-all: Ensure users are always sent to the right place */}
+                <Route path="*" element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />} />
+            </Routes>
         </div>
     );
 }
