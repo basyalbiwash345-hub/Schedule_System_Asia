@@ -93,6 +93,10 @@ function App() {
     const [editingRotation,     setEditingRotation]     = useState(null);
     const [intervalPreset,      setIntervalPreset]      = useState('weekly');
     const [rotationNamePreset,  setRotationNamePreset]  = useState('');
+    const [showRotationMemberDropdown, setShowRotationMemberDropdown] = useState(false);
+    const [rotationMemberSearch,      setRotationMemberSearch]      = useState('');
+    const [viewingRotation,    setViewingRotation]    = useState(null);
+    const [showViewRotationModal, setShowViewRotationModal] = useState(false);
     const [rotationDeleteConfirm, setRotationDeleteConfirm] = useState(DEFAULT_ROTATION_DELETE_CONFIRM);
     const [rotationPopup,         setRotationPopup]         = useState(DEFAULT_ROTATION_POPUP);
 
@@ -111,6 +115,10 @@ function App() {
         closeTeamModal();
         closeRotationPopup();
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+        setShowRotationMemberDropdown(false);
+        setRotationMemberSearch('');
+        setViewingRotation(null);
+        setShowViewRotationModal(false);
     }, [activePage]);
 
     useEffect(() => {
@@ -151,9 +159,19 @@ function App() {
         setEditingRotation(null);
         setIntervalPreset('weekly');
         setRotationNamePreset('');
+        setShowRotationMemberDropdown(false);
+        setRotationMemberSearch('');
     };
     const closeRotationPopup = () => setRotationPopup(DEFAULT_ROTATION_POPUP);
     const showRotationPopup = (type, title, message) => setRotationPopup({ open: true, type, title, message });
+    const closeEditRotation = () => {
+        resetRotationForm();
+        closeRotationPopup();
+    };
+    const closeViewRotation = () => {
+        setViewingRotation(null);
+        setShowViewRotationModal(false);
+    };
 
     // ── USER HANDLERS ─────────────────────────────────────────────────────────
     const openCreateUser = () => { setEditingUser(null); setUserForm(DEFAULT_USER_FORM); setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true); };
@@ -330,15 +348,25 @@ function App() {
 
             await fetchRotations();
             if (editingRotation?.id === rotationId) resetRotationForm();
+            if (viewingRotation?.id === rotationId) closeViewRotation();
             showRotationPopup('success', 'Rotation deleted', `Rotation "${rotationName}" deleted successfully.`);
         } catch {
             showRotationPopup('error', 'Unable to delete rotation', 'Network error. Please try again.');
         }
     };
+    const openViewRotation = (rotation) => {
+        setViewingRotation(rotation);
+        setShowViewRotationModal(true);
+        closeRotationPopup();
+        setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+    };
     const openEditRotation = (rotation) => {
         setEditingRotation(rotation);
         setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
         setRotationNamePreset(ROTATION_NAME_OPTIONS.includes(rotation.name) ? rotation.name : 'custom');
+        setShowRotationMemberDropdown(false);
+        setRotationMemberSearch('');
+        closeViewRotation();
         closeRotationPopup();
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
         setRotationFormData({
@@ -372,6 +400,17 @@ function App() {
         if (!names.length) return `${ids.length} member${ids.length > 1 ? 's' : ''}`;
         if (names.length <= 3) return names.join(', ');
         return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+    };
+    const formatRotationTeamName = (rotation) => rotation?.teams?.name || 'N/A';
+    const getRotationMemberNames = (rotation) => {
+        const ids = Array.isArray(rotation?.assigned_member_ids) ? rotation.assigned_member_ids : [];
+        return ids.map(id => userLookup[id]?.name).filter(Boolean);
+    };
+    const formatEscalationTiersLabel = (value) => {
+        if (!value) return 'None';
+        if (Array.isArray(value)) return value.join(', ');
+        if (typeof value === 'string') return value;
+        return JSON.stringify(value);
     };
 
     // ── RENDER ────────────────────────────────────────────────────────────────
@@ -806,6 +845,15 @@ function App() {
         // ── ROTATIONS ─────────────────────────────────────────────────────────
         if (activePage === 'Rotations') {
             const availableMembers = users.filter(u => String(u.team_id) === String(rotationFormData.team_id));
+            const filteredAvailableMembers = availableMembers.filter(u => {
+                const query = rotationMemberSearch.trim().toLowerCase();
+                if (!query) return true;
+                return (
+                    (u.name || '').toLowerCase().includes(query) ||
+                    (u.email || '').toLowerCase().includes(query) ||
+                    (u.username || '').toLowerCase().includes(query)
+                );
+            });
                 // ✅ filteredRotations is INSIDE the Rotations block — safe from initial render crash
                 const filteredRotations = rotations.filter(r => {
                 const teamName        = (r.teams?.name || '').toLowerCase();
@@ -814,63 +862,92 @@ function App() {
                 const matchesInterval = !rotationIntervalFilter || r.interval_unit === rotationIntervalFilter;
                 return matchesSearch && matchesTeam && matchesInterval;
             });
-            return (
-                <div className="grid-container">
-                    <div className="enterprise-card">
-                        <h3>{editingRotation ? 'Edit Rotation' : 'New Rotation'}</h3>
-                        <form onSubmit={handleSaveRotation}>
-                            <div className="form-group">
-                                <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={rotationNamePreset} onChange={e => { const v = e.target.value; setRotationNamePreset(v); setRotationFormData(prev => ({ ...prev, name: v === 'custom' ? '' : v })); }} required>
-                                    <option value="">Select rotation name</option>
-                                    {ROTATION_NAME_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-                                    <option value="custom">Custom...</option>
-                                </select>
-                                {rotationNamePreset === 'custom' && <input className="enterprise-input" placeholder="Custom rotation name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} style={{ marginTop: '0.6rem' }} required />}
-                            </div>
-                            <div className="form-group">
-                                <label>Assigned Team <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={rotationFormData.team_id} onChange={e => setRotationFormData({ ...rotationFormData, team_id: e.target.value, assigned_member_ids: [] })} required>
-                                    <option value="">Select team</option>
-                                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
-                                {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Select a team to load members.</p> : (
-                                    <select className="enterprise-input" multiple size={Math.min(6, availableMembers.length)} value={rotationFormData.assigned_member_ids} onChange={e => setRotationFormData({ ...rotationFormData, assigned_member_ids: Array.from(e.target.selectedOptions).map(o => o.value) })}>
-                                        {availableMembers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                    </select>
+            const renderRotationForm = () => (
+                <form onSubmit={handleSaveRotation}>
+                    <div className="form-group">
+                        <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
+                        <select className="enterprise-input" value={rotationNamePreset} onChange={e => { const v = e.target.value; setRotationNamePreset(v); setRotationFormData(prev => ({ ...prev, name: v === 'custom' ? '' : v })); }} required>
+                            <option value="">Select rotation name</option>
+                            {ROTATION_NAME_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                            <option value="custom">Custom...</option>
+                        </select>
+                        {rotationNamePreset === 'custom' && <input className="enterprise-input" placeholder="Custom rotation name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} style={{ marginTop: '0.6rem' }} required />}
+                    </div>
+                    <div className="form-group">
+                        <label>Assigned Team <span style={{ color: '#e31937' }}>*</span></label>
+                        <select className="enterprise-input" value={rotationFormData.team_id} onChange={e => { setRotationFormData({ ...rotationFormData, team_id: e.target.value, assigned_member_ids: [] }); setShowRotationMemberDropdown(false); setRotationMemberSearch(''); }} required>
+                            <option value="">Select team</option>
+                            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
+                        {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Select a team to load members.</p> : (
+                            <div style={{ position: 'relative' }}>
+                                <button type="button" onClick={() => setShowRotationMemberDropdown(!showRotationMemberDropdown)} style={{ width: '100%', padding: '0.65rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+                                    {rotationFormData.assigned_member_ids.length === 0 ? 'Select members' : `${rotationFormData.assigned_member_ids.length} member(s) selected`}<span>{showRotationMemberDropdown ? '▲' : '▼'}</span>
+                                </button>
+                                {rotationFormData.assigned_member_ids.length > 0 && (
+                                    <p style={{ margin: '0.45rem 0 0', color: '#6b7280', fontSize: '0.78rem' }}>
+                                        {availableMembers.filter(u => rotationFormData.assigned_member_ids.includes(String(u.id))).map(u => u.name).join(', ')}
+                                    </p>
                                 )}
-                            </div>
-                            <div className="form-group">
-                                <label>Rotation Interval <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={intervalPreset} onChange={e => { const v = e.target.value; setIntervalPreset(v); const p = INTERVAL_PRESET_OPTIONS.find(o => o.value === v); if (p?.unit) setRotationFormData(prev => ({ ...prev, interval_unit: p.unit, interval_count: p.count })); }} required>
-                                    {INTERVAL_PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                                {intervalPreset === 'custom' && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.6rem' }}>
-                                        <input className="enterprise-input" type="number" min="1" value={rotationFormData.interval_count} onChange={e => setRotationFormData({ ...rotationFormData, interval_count: e.target.value })} />
-                                        <select className="enterprise-input" value={rotationFormData.interval_unit} onChange={e => setRotationFormData({ ...rotationFormData, interval_unit: e.target.value })}>
-                                            {INTERVAL_UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                        </select>
+                                {showRotationMemberDropdown && (
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 10px 15px rgba(0,0,0,0.1)', maxHeight: '300px', overflowY: 'auto' }}>
+                                        <input type="text" placeholder="Search members or users..." value={rotationMemberSearch} onChange={e => setRotationMemberSearch(e.target.value)} style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '8px', boxSizing: 'border-box' }} />
+                                        <div style={{ paddingBottom: '8px', borderBottom: '1px solid #f3f4f6', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                            <button type="button" onClick={() => setRotationFormData({ ...rotationFormData, assigned_member_ids: [] })} style={{ fontSize: '0.75rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600 }}>✕ Clear All</button>
+                                            <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{rotationFormData.assigned_member_ids.length} selected</span>
+                                        </div>
+                                        {filteredAvailableMembers.length === 0 ? (
+                                            <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.8rem' }}>No members match this search.</p>
+                                        ) : filteredAvailableMembers.map(u => (
+                                            <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                                <input type="checkbox" checked={rotationFormData.assigned_member_ids.includes(String(u.id))} onChange={() => { const id = String(u.id); setRotationFormData(prev => ({ ...prev, assigned_member_ids: prev.assigned_member_ids.includes(id) ? prev.assigned_member_ids.filter(memberId => memberId !== id) : [...prev.assigned_member_ids, id] })); }} />
+                                                {u.name}
+                                            </label>
+                                        ))}
                                     </div>
                                 )}
                             </div>
-                            <div className="form-group"><label>Start Date <span style={{ color: '#e31937' }}>*</span></label><input className="enterprise-input" type="date" value={rotationFormData.start_date} onChange={e => setRotationFormData({ ...rotationFormData, start_date: e.target.value })} required /></div>
-                            <div className="form-group"><label>Notes / Description</label><textarea className="enterprise-input" rows="3" value={rotationFormData.notes} onChange={e => setRotationFormData({ ...rotationFormData, notes: e.target.value })} /></div>
-                            <div className="form-group"><label>Escalation Tiers (optional)</label><textarea className="enterprise-input" rows="2" placeholder="Tier 1, Tier 2 or JSON" value={rotationFormData.escalation_tiers} onChange={e => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })} /><p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>Comma-separated list or JSON array.</p></div>
-                            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <input type="checkbox" checked={rotationFormData.allow_double_booking} onChange={e => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })} />
-                                <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking (optional)</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
-                                {editingRotation && <button type="button" onClick={() => { resetRotationForm(); closeRotationPopup(); }} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
-                            </div>
-                        </form>
+                        )}
                     </div>
-                    <div className="enterprise-card no-padding">
+                    <div className="form-group">
+                        <label>Rotation Interval <span style={{ color: '#e31937' }}>*</span></label>
+                        <select className="enterprise-input" value={intervalPreset} onChange={e => { const v = e.target.value; setIntervalPreset(v); const p = INTERVAL_PRESET_OPTIONS.find(o => o.value === v); if (p?.unit) setRotationFormData(prev => ({ ...prev, interval_unit: p.unit, interval_count: p.count })); }} required>
+                            {INTERVAL_PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        {intervalPreset === 'custom' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.6rem' }}>
+                                <input className="enterprise-input" type="number" min="1" value={rotationFormData.interval_count} onChange={e => setRotationFormData({ ...rotationFormData, interval_count: e.target.value })} />
+                                <select className="enterprise-input" value={rotationFormData.interval_unit} onChange={e => setRotationFormData({ ...rotationFormData, interval_unit: e.target.value })}>
+                                    {INTERVAL_UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                    <div className="form-group"><label>Start Date <span style={{ color: '#e31937' }}>*</span></label><input className="enterprise-input" type="date" value={rotationFormData.start_date} onChange={e => setRotationFormData({ ...rotationFormData, start_date: e.target.value })} required /></div>
+                    <div className="form-group"><label>Notes / Description</label><textarea className="enterprise-input" rows="3" value={rotationFormData.notes} onChange={e => setRotationFormData({ ...rotationFormData, notes: e.target.value })} /></div>
+                    <div className="form-group"><label>Escalation Tiers (optional)</label><textarea className="enterprise-input" rows="2" placeholder="Tier 1, Tier 2 or JSON" value={rotationFormData.escalation_tiers} onChange={e => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })} /><p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>Comma-separated list or JSON array.</p></div>
+                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input type="checkbox" checked={rotationFormData.allow_double_booking} onChange={e => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })} />
+                        <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking (optional)</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
+                        {editingRotation && <button type="button" onClick={closeEditRotation} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
+                    </div>
+                </form>
+            );
+            return (
+                <div className="grid-container">
+                    {!editingRotation && (
+                        <div className="enterprise-card">
+                            <h3>New Rotation</h3>
+                            {renderRotationForm()}
+                        </div>
+                    )}
+                    <div className="enterprise-card no-padding" style={editingRotation ? { gridColumn: '1 / -1' } : {}}>
                     {/* Rotation Filter Bar */}
                     <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
                         <div style={{ flex: 2, minWidth: '180px' }}>
@@ -915,12 +992,54 @@ function App() {
                                                     <td>{formatCoverageLabel(r)}</td>
                                                     <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
                                                     <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
-                                                    <td><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button></td>
+                                                    <td><button onClick={() => openViewRotation(r)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button></td>
                                                 </tr>
                                             ))}
                                             </tbody>
                                         </table>
                                     </div>
+                                    {editingRotation && (
+                                        <div className="modal-overlay" onClick={closeEditRotation}>
+                                            <div className="enterprise-card" style={{ minWidth: '620px', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                                    <h2 style={{ margin: 0 }}>Edit Rotation</h2>
+                                                    <button onClick={closeEditRotation} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>×</button>
+                                                </div>
+                                                {renderRotationForm()}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {showViewRotationModal && viewingRotation && (
+                                        <div className="modal-overlay" onClick={closeViewRotation}>
+                                            <div className="modal-content" style={{ minWidth: '560px' }} onClick={e => e.stopPropagation()}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                                    <h2 style={{ margin: 0 }}>Rotation Details</h2>
+                                                    <button onClick={closeViewRotation} className="close-modal-btn">×</button>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                                    <div className="info-box"><label>Name</label><p>{viewingRotation.name || '—'}</p></div>
+                                                    <div className="info-box"><label>Team</label><p>{formatRotationTeamName(viewingRotation)}</p></div>
+                                                    <div className="info-box"><label>Interval</label><p>{formatIntervalLabel(viewingRotation.interval_unit, viewingRotation.interval_count || 1)}</p></div>
+                                                    <div className="info-box"><label>Start Date</label><p>{viewingRotation.start_date ? viewingRotation.start_date.split('T')[0] : '—'}</p></div>
+                                                    <div className="info-box"><label>Status</label><p>{viewingRotation.status || 'active'}</p></div>
+                                                    <div className="info-box"><label>Double Booking</label><p>{viewingRotation.allow_double_booking ? 'Allowed' : 'Not allowed'}</p></div>
+                                                    <div className="info-box" style={{ gridColumn: 'span 2' }}><label>Coverage</label><p>{formatCoverageLabel(viewingRotation)}</p></div>
+                                                    <div className="info-box" style={{ gridColumn: 'span 2' }}>
+                                                        <label>Assigned Members</label>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.6rem' }}>
+                                                            {getRotationMemberNames(viewingRotation).length > 0 ? getRotationMemberNames(viewingRotation).map((name, index) => <span key={`${viewingRotation.id}-${name}-${index}`} style={{ background: '#fff', border: '1px solid #e5e7eb', color: '#4b5563', borderRadius: '6px', padding: '4px 10px', fontSize: '0.8rem', fontWeight: 500 }}>{name}</span>) : <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>No members assigned.</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="info-box" style={{ gridColumn: 'span 2' }}><label>Escalation Tiers</label><p>{formatEscalationTiersLabel(viewingRotation.escalation_tiers)}</p></div>
+                                                    <div className="info-box" style={{ gridColumn: 'span 2' }}><label>Notes</label><p>{viewingRotation.notes || 'No notes provided.'}</p></div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                                    <button onClick={() => openEditRotation(viewingRotation)} className="btn-primary" style={{ flex: 1 }}>Edit Rotation</button>
+                                                    <button onClick={closeViewRotation} className="btn-cancel" style={{ flex: 1 }}>Close</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         }
