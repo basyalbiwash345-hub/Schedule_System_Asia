@@ -971,12 +971,22 @@ function App() {
                             )}
                         </div>
                         <div style={{ flex: 1, minWidth: '130px' }}>
-                            <select value={rotationIntervalFilter} onChange={e => setRotationIntervalFilter(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', background: '#fff', cursor: 'pointer' }}>
+                            <select value={rotationIntervalFilter}
+                                    onChange={e => setRotationIntervalFilter(e.target.value)} style={{
+                                width: '100%',
+                                padding: '0.5rem 0.75rem',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '6px',
+                                fontSize: '0.875rem',
+                                background: '#fff',
+                                cursor: 'pointer'
+                            }}>
                                 <option value="">All Intervals</option>
                                 <option value="day">Daily</option>
                                 <option value="week">Weekly</option>
                                 <option value="biweek">Bi-Weekly</option>
                                 <option value="month">Monthly</option>
+                                <option value="custom">Custom</option>
                             </select>
                         </div>
                         {(rotationSearchTerm || rotationTeamFilter.length > 0 || rotationIntervalFilter) && (
