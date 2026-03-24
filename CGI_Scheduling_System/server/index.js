@@ -2,15 +2,81 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const prisma = require('./db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = 5000;
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // ── IMPORT ROUTES ─────────────────────────────────────────────────────────────
 const rotationRoutes = require('./rotations');
 
 app.use(cors());
 app.use(express.json());
+
+
+
+// ── NEW LOGIN ROUTE (ADD HERE) ────────────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const user = await prisma.users.findUnique({
+            where: { username },
+            include: { user_roles: { include: { roles: true } } },
+        });
+
+        console.log('Login attempt for:', username, 'Found user in DB?', !!user);
+        if (user) console.log('Hashed password in DB:', user.password_hash);
+
+        if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) return res.status(401).json({ error: 'Invalid username or password' });
+
+        const roles = user.user_roles.map(ur => ur.roles.name);
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, roles: roles },
+            JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+
+
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                name: user.name,
+                username: user.username, // ADDED: Critical for Header.js isAdmin check
+                roles: roles,
+                user_roles: user.user_roles // ADDED: Critical for permissions check
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. MIDDLEWARE: Admin Protection (ADD THIS HERE)
+// This defines the "lock" but doesn't apply it yet.
+const authorizeAdmin = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (!decoded.roles.includes('Administrator')) {
+            return res.status(403).json({ error: 'Access denied: Admins only' });
+        }
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(401).json({ error: 'Token is not valid' });
+    }
+};
 
 // ── USE ROUTES ────────────────────────────────────────────────────────────────
 app.use('/api/rotations', rotationRoutes);
@@ -128,11 +194,13 @@ app.post('/api/users', async (req, res) => {
             if (!team) return res.status(400).json({ errors: { team_id: 'Selected team is invalid.' } });
         }
         const fullName = `${first_name.trim()} ${last_name.trim()}`;
+        const salt = await bcrypt.genSalt(10);
+        const hashedPw = await bcrypt.hash(password, salt);
         const newUser = await prisma.users.create({
             data: {
                 first_name: first_name.trim(), last_name: last_name.trim(),
                 name: fullName, username: username.trim(),
-                email: email.trim().toLowerCase(), password_hash: password,
+                email: email.trim().toLowerCase(), password_hash: hashedPw,
                 phone: phone?.trim() || null, location: location?.trim() || null,
                 team_id: team_id ? Number(team_id) : null,
                 must_change_password: true, status: 'active',
@@ -196,8 +264,7 @@ app.put('/api/users/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
-    const userId = parseInt(req.params.id);
+app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {    const userId = parseInt(req.params.id);
     try {
         const existing = await prisma.users.findUnique({
             where: { id: userId },
@@ -267,8 +334,7 @@ app.get('/api/teams', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/teams', async (req, res) => {
-    try {
+app.post('/api/teams', authorizeAdmin, async (req, res) => {    try {
         const { name, color, leadId, description, members } = req.body;
         const team = await prisma.teams.create({
             data: {
@@ -283,7 +349,7 @@ app.post('/api/teams', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/teams/:id', async (req, res) => {
+app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
     const { name, color, leadId, description, members } = req.body;
     try {
@@ -502,12 +568,14 @@ const seedExcelData = async () => {
         const username   = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) + Math.floor(Math.random() * 99);
         const email      = username + '@cgi.com';
         const teamId     = createdTeams[emp.team];
+        const salt = await bcrypt.genSalt(10);
+        const seedHash = await bcrypt.hash('TempPass1!', salt);
         try {
             await prisma.users.create({
                 data: {
                     first_name, last_name, name: emp.name,
-                    username, email, password_hash: 'TempPass1!',
-                    team_id: teamId || null,
+                    username, email,
+                    password_hash: seedHash, // Save hashed version for seeded users                    team_id: teamId || null,
                     must_change_password: true, status: 'active',
                     ...(employeeRole ? { user_roles: { create: [{ role_id: employeeRole.id }] } } : {}),
                 },
@@ -520,6 +588,34 @@ const seedExcelData = async () => {
 // ── START SERVER ──────────────────────────────────────────────────────────────
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
+
+    // FORCE CREATE ADMIN (Temporary for testing)
+    try {
+        const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
+        if (adminRole) {
+            const salt = await bcrypt.genSalt(10);
+            const adminHash = await bcrypt.hash('AdminPass1!', salt);
+
+            await prisma.users.upsert({
+                where: { username: 'admin' },
+                update: {}, // Don't change anything if they already exist
+                create: {
+                    first_name: 'System',
+                    last_name: 'Admin',
+                    name: 'CGI Administrator',
+                    username: 'admin',
+                    email: 'admin@cgi.com',
+                    password_hash: adminHash,
+                    status: 'active',
+                    user_roles: { create: [{ role_id: adminRole.id }] }
+                }
+            });
+            console.log('🔑 Manual Admin Check: Ready');
+        }
+    } catch (e) {
+        console.log('Admin already exists or Error:', e.message);
+    }
+
     await seedRoles();
     await seedExcelData();
 });

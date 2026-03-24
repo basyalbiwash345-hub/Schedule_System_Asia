@@ -28,7 +28,12 @@ const ADMIN_NAV_ITEMS = [
 ];
 
 const Header = ({ user, onLogout, activePage, onNavigate }) => {
-    const isAdmin = user?.role === 'Administrators' || user?.role === 'Admin';
+    const isAdmin =
+        user?.role === 'Administrator' ||
+        user?.role === 'Admin' ||
+        user?.username === 'admin' ||
+        user?.user_roles?.some(ur => ur.roles?.name === 'Administrator');
+
     const [anchorEl, setAnchorEl] = useState(null);
     const allNavItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 

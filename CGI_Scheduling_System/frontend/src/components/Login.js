@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from 'react-router-dom'; // Add this for redirection
 import {
     Box, Card, CardContent, TextField, Button,
     Typography, Alert, Divider, InputAdornment, IconButton
@@ -8,19 +9,50 @@ import {
     LockOutlined as LockIcon
 } from '@mui/icons-material';
 
-const Login = ({ onLogin }) => {
+const Login = ({ onLoginSuccess }) => {// Removed onLogin prop as we handle it here now
+    const navigate = useNavigate();
     const [mode, setMode] = useState("login");
     const isRegister = mode === "register";
     const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
-        const result = onLogin({ identifier, password });
-        if (result && !result.ok) setError(result.error || "Login failed.");
+        setLoading(true);
+
+        try {
+            const response = await fetch('http://localhost:5000/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: identifier, password }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // 1. Store the JWT token and User Info
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+
+                // 2. Notify App.js that login was successful
+                if (onLoginSuccess) {
+                    onLoginSuccess(data.user);
+                }
+
+                // 3. Redirect to Dashboard
+                navigate('/dashboard');
+            } else {
+                setError(data.error || "Invalid username or password.");
+            }
+        } catch (err) {
+            setError("Cannot connect to server. Is the backend running?");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -64,7 +96,7 @@ const Login = ({ onLogin }) => {
                         </Typography>
                     </Box>
 
-                    {/* Error */}
+                    {/* Error Display */}
                     {error && (
                         <Alert severity="error" sx={{ mb: 2, borderRadius: '8px' }}>
                             {error}
@@ -74,11 +106,11 @@ const Login = ({ onLogin }) => {
                     {/* Form */}
                     <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <TextField
-                            label="Email or username"
+                            label="Username"
                             type="text"
                             value={identifier}
                             onChange={e => setIdentifier(e.target.value)}
-                            placeholder="you@cgi.com"
+                            placeholder="e.g. jdoe12"
                             required
                             fullWidth
                             size="small"
@@ -121,6 +153,7 @@ const Login = ({ onLogin }) => {
                             type="submit"
                             variant="contained"
                             fullWidth
+                            disabled={loading}
                             size="large"
                             startIcon={<LockIcon />}
                             sx={{
@@ -133,7 +166,7 @@ const Login = ({ onLogin }) => {
                                 '&:hover': { backgroundColor: '#c41230' }
                             }}
                         >
-                            {isRegister ? "Create Account" : "Sign In"}
+                            {loading ? "Authenticating..." : (isRegister ? "Create Account" : "Sign In")}
                         </Button>
                     </Box>
 
