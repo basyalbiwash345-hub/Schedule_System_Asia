@@ -9,18 +9,19 @@ import {
 } from '@mui/icons-material';
 
 const Login = ({ onLogin }) => {
-    const [mode, setMode] = useState("login");
-    const isRegister = mode === "register";
     const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
-        const result = onLogin({ identifier, password });
+        setIsSubmitting(true);
+        const result = await onLogin({ identifier, password });
         if (result && !result.ok) setError(result.error || "Login failed.");
+        setIsSubmitting(false);
     };
 
     return (
@@ -57,10 +58,10 @@ const Login = ({ onLogin }) => {
                             CGI
                         </Box>
                         <Typography variant="h5" fontWeight={700} color="#111827">
-                            {isRegister ? "Create Account" : "Welcome Back"}
+                            Welcome Back
                         </Typography>
                         <Typography variant="body2" color="#6b7280" mt={0.5}>
-                            Sign in to manage your enterprise schedule
+                            Sign in with your assigned CGI account to access your schedule tools
                         </Typography>
                     </Box>
 
@@ -123,6 +124,7 @@ const Login = ({ onLogin }) => {
                             fullWidth
                             size="large"
                             startIcon={<LockIcon />}
+                            disabled={isSubmitting}
                             sx={{
                                 backgroundColor: '#e31937',
                                 borderRadius: '8px',
@@ -133,7 +135,7 @@ const Login = ({ onLogin }) => {
                                 '&:hover': { backgroundColor: '#c41230' }
                             }}
                         >
-                            {isRegister ? "Create Account" : "Sign In"}
+                            {isSubmitting ? "Signing In..." : "Sign In"}
                         </Button>
                     </Box>
 
@@ -142,18 +144,7 @@ const Login = ({ onLogin }) => {
                     {/* Footer */}
                     <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="body2" color="#6b7280">
-                            {isRegister ? "Already have an account?" : "Don't have an account?"}
-                            {' '}
-                            <Typography
-                                component="span"
-                                variant="body2"
-                                color="#e31937"
-                                fontWeight={600}
-                                sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                                onClick={() => setMode(isRegister ? "login" : "register")}
-                            >
-                                {isRegister ? "Sign In" : "Create Account"}
-                            </Typography>
+                            Accounts and role permissions are managed by an Administrator.
                         </Typography>
                     </Box>
 

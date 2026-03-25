@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
     AppBar, Toolbar, Box, Button, InputBase,
-    Avatar, Typography, Menu, MenuItem, Divider, IconButton
+    Avatar, Typography, Menu, MenuItem, Divider
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -27,10 +27,10 @@ const ADMIN_NAV_ITEMS = [
     { label: 'Roles',     page: 'Roles',     icon: <RolesIcon fontSize="small" /> },
 ];
 
-const Header = ({ user, onLogout, activePage, onNavigate }) => {
-    const isAdmin = user?.role === 'Administrators' || user?.role === 'Admin';
+const Header = ({ user, onLogout, activePage, onNavigate, allowedPages = [] }) => {
     const [anchorEl, setAnchorEl] = useState(null);
-    const allNavItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
+    const allNavItems = [...NAV_ITEMS, ...ADMIN_NAV_ITEMS].filter(({ page }) => allowedPages.includes(page));
+    const defaultPage = allowedPages.includes('Overview') ? 'Overview' : allowedPages[0] || 'Matrix';
 
     return (
         <AppBar position="sticky" elevation={0} sx={{
@@ -42,7 +42,7 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
 
                 {/* Logo */}
                 <Box
-                    onClick={() => onNavigate('Overview')}
+                    onClick={() => onNavigate(defaultPage)}
                     sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', mr: 2, flexShrink: 0 }}
                 >
                     <Box sx={{
@@ -123,7 +123,7 @@ const Header = ({ user, onLogout, activePage, onNavigate }) => {
                             {user?.name || 'User'}
                         </Typography>
                         <Typography variant="caption" color="#6b7280" fontSize="0.7rem">
-                            {user?.role || 'Scheduler'}
+                            {user?.primary_role || user?.role || 'Scheduler'}
                         </Typography>
                     </Box>
                     <ArrowDownIcon sx={{ fontSize: '1rem', color: '#9ca3af' }} />

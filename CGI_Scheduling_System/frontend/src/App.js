@@ -33,6 +33,43 @@ const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [],
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
 const DEFAULT_ROTATION_DELETE_CONFIRM = { open: false, rotationId: null, rotationName: '' };
 const DEFAULT_ROTATION_POPUP = { open: false, type: 'success', title: '', message: '' };
+const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner', 'Employee'];
+const PAGE_ACCESS_BY_ROLE = {
+    'Administrator': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations', 'Roles'],
+    'Team Lead / Supervisor': ['Overview', 'Matrix', 'Teams', 'Rotations'],
+    'Rotation Owner': ['Overview', 'Matrix', 'Rotations'],
+    'Employee': ['Overview', 'Matrix'],
+};
+const PAGE_ACCESS_ALIASES = {
+    TeamDetails: 'Teams',
+};
+
+const getPrimaryRole = (roles = []) =>
+    ROLE_PRIORITY.find(role => roles.includes(role)) || roles[0] || 'Employee';
+
+const getAllowedPages = (roles = []) => {
+    const allowedPages = new Set();
+
+    roles.forEach(role => {
+        (PAGE_ACCESS_BY_ROLE[role] || []).forEach(page => allowedPages.add(page));
+    });
+
+    if (allowedPages.size === 0) {
+        allowedPages.add('Matrix');
+    }
+
+    return Array.from(allowedPages);
+};
+
+const normalizePageForAccess = (page) => PAGE_ACCESS_ALIASES[page] || page;
+
+const canAccessPage = (user, page) =>
+    getAllowedPages(user?.roles || []).includes(normalizePageForAccess(page));
+
+const getDefaultPageForUser = (user) => {
+    const allowedPages = getAllowedPages(user?.roles || []);
+    return allowedPages.includes('Matrix') ? 'Matrix' : allowedPages[0] || 'Matrix';
+};
 
 function App() {
     const [users,      setUsers]      = useState([]);
@@ -110,6 +147,12 @@ function App() {
     // ── NOTIFICATIONS & CONFIRMS ──────────────────────────────────────────────
     const [deleteConfirm,  setDeleteConfirm]  = useState({ open: false, user: null });
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
+    const allowedPages = getAllowedPages(currentUser?.roles || []);
+    const shouldLoadUsers = allowedPages.some(page => ['Users', 'Teams', 'Rotations', 'Roles'].includes(page));
+    const shouldLoadTeams = allowedPages.some(page => ['Teams', 'Rotations'].includes(page));
+    const shouldLoadRoles = allowedPages.some(page => ['Users', 'Roles'].includes(page));
+    const shouldLoadLocations = allowedPages.includes('Users');
+    const shouldLoadRotations = allowedPages.includes('Rotations');
 
     useEffect(() => {
         closeTeamModal();
@@ -122,11 +165,31 @@ function App() {
     }, [activePage]);
 
     useEffect(() => {
-        if (isLoggedIn) {
-            fetchUsers(); fetchTeams(); fetchRoles(); fetchLocations();
-            if (activePage === 'Rotations') fetchRotations();
-        }
-    }, [isLoggedIn, activePage]);
+        if (!isLoggedIn || !currentUser) return;
+
+        if (shouldLoadUsers) fetchUsers();
+        else setUsers([]);
+
+        if (shouldLoadTeams) fetchTeams();
+        else setTeams([]);
+
+        if (shouldLoadRoles) fetchRoles();
+        else setRoles([]);
+
+        if (shouldLoadLocations) fetchLocations();
+        else setLocations([]);
+
+        if (shouldLoadRotations) fetchRotations();
+        else setRotations([]);
+    }, [isLoggedIn, currentUser, shouldLoadUsers, shouldLoadTeams, shouldLoadRoles, shouldLoadLocations, shouldLoadRotations]);
+
+    useEffect(() => {
+        if (!isLoggedIn || !currentUser) return;
+        if (canAccessPage(currentUser, activePage)) return;
+
+        setSelectedTeam(null);
+        setActivePage(getDefaultPageForUser(currentUser));
+    }, [isLoggedIn, currentUser, activePage]);
 
     const fetchUsers     = async () => { try { const r = await fetch('/api/users');     const d = await r.json(); setUsers(Array.isArray(d) ? d : []);     } catch { setUsers([]); } };
     const fetchTeams     = async () => { try { const r = await fetch('/api/teams');     const d = await r.json(); setTeams(Array.isArray(d) ? d : []);     } catch { setTeams([]); } };
@@ -141,12 +204,44 @@ function App() {
         return 'custom';
     };
 
-    const handleAdminLogin = ({ identifier, password }) => {
-        if (identifier === 'admin@cgi.com' && password === 'AdminAdmin902') {
-            setCurrentUser({ name: 'CGI Administrator', role: 'Admin', email: identifier });
-            setIsLoggedIn(true); return { ok: true };
+    const handleLogin = async ({ identifier, password }) => {
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier, password }),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                return { ok: false, error: data.error || 'Access denied.' };
+            }
+
+            const authenticatedUser = {
+                ...data.user,
+                role: data.user.primary_role || getPrimaryRole(data.user.roles || []),
+            };
+
+            setCurrentUser(authenticatedUser);
+            setSelectedTeam(null);
+            setIsLoggedIn(true);
+            setActivePage(getDefaultPageForUser(authenticatedUser));
+            return { ok: true };
+        } catch {
+            return { ok: false, error: 'Unable to reach the server. Please try again.' };
         }
-        return { ok: false, error: 'Access Denied.' };
+    };
+
+    const handleLogout = () => {
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setActivePage('Matrix');
+        setSelectedTeam(null);
+        setUsers([]);
+        setTeams([]);
+        setRoles([]);
+        setLocations([]);
+        setRotations([]);
     };
 
     const showNotification = (message, type = 'success') => {
@@ -415,6 +510,16 @@ function App() {
 
     // ── RENDER ────────────────────────────────────────────────────────────────
     const renderPageContent = () => {
+        if (!canAccessPage(currentUser, activePage)) {
+            return (
+                <div className="enterprise-card">
+                    <h2 style={{ marginTop: 0, color: '#111827' }}>Access Restricted</h2>
+                    <p style={{ marginBottom: 0, color: '#6b7280' }}>
+                        Your role does not have permission to open this section.
+                    </p>
+                </div>
+            );
+        }
 
         // ✅ SAFE MEMBER PARSER — handles array, JSON string, or null
         const parseMembers = (members) => {
@@ -1109,7 +1214,7 @@ function App() {
         return <div className="enterprise-card"><h2>{activePage} Management</h2><p>Development in progress.</p></div>;
     };
 
-    if (!isLoggedIn) return <Login onLogin={handleAdminLogin} />;
+    if (!isLoggedIn) return <Login onLogin={handleLogin} />;
 
     const NotificationBanner = () => notification.show ? (
         <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999, background: notification.type === 'success' ? '#ecfdf5' : '#fee2e2', color: notification.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${notification.type === 'success' ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', padding: '0.85rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '0.5rem', maxWidth: '360px' }}>
@@ -1191,7 +1296,13 @@ function App() {
             <TeamDeleteConfirmModal />
             <RotationPopupModal />
             <RotationDeleteConfirmModal />
-            <Header user={currentUser} activePage={activePage} onNavigate={setActivePage} onLogout={() => setIsLoggedIn(false)} />
+            <Header
+                user={currentUser}
+                activePage={activePage}
+                allowedPages={allowedPages}
+                onNavigate={setActivePage}
+                onLogout={handleLogout}
+            />
             <main className="main-content">
                 <header className="page-header"><h1>{activePage} Management</h1></header>
                 {renderPageContent()}

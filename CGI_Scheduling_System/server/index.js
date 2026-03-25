@@ -44,6 +44,26 @@ const validatePassword = (password) => {
     return errors;
 };
 
+const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner', 'Employee'];
+
+const getPrimaryRole = (roleNames = []) =>
+    ROLE_PRIORITY.find((role) => roleNames.includes(role)) || roleNames[0] || 'Employee';
+
+const serializeAuthenticatedUser = (user) => {
+    const roleNames = user.user_roles?.map((ur) => ur.roles?.name).filter(Boolean) || [];
+    return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        team_id: user.team_id,
+        status: user.status,
+        must_change_password: user.must_change_password,
+        roles: roleNames,
+        primary_role: getPrimaryRole(roleNames),
+    };
+};
+
 const validateUserPayload = (body, isUpdate = false) => {
     const errors = {};
     if (!isUpdate) {
@@ -85,6 +105,38 @@ const logAction = async (userId, action, entityType, entityId, oldValue = null, 
         });
     } catch (err) { console.error('Audit log failed:', err.message); }
 };
+
+// ── AUTH ─────────────────────────────────────────────────────────────────────
+app.post('/api/auth/login', async (req, res) => {
+    const identifier = req.body.identifier?.trim();
+    const password = req.body.password;
+
+    if (!identifier || !password)
+        return res.status(400).json({ error: 'Email/username and password are required.' });
+
+    try {
+        const normalizedEmail = identifier.toLowerCase();
+        const user = await prisma.users.findFirst({
+            where: {
+                OR: [
+                    { email: normalizedEmail },
+                    { username: identifier },
+                ],
+            },
+            include: { user_roles: { include: { roles: true } } },
+        });
+
+        if (!user || user.password_hash !== password)
+            return res.status(401).json({ error: 'Invalid email/username or password.' });
+
+        if (user.status && user.status !== 'active')
+            return res.status(403).json({ error: 'This account is inactive.' });
+
+        res.json({ user: serializeAuthenticatedUser(user) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
 app.get('/api/users', async (req, res) => {
@@ -403,6 +455,60 @@ const seedRoles = async () => {
     }
 };
 
+const seedDefaultAdmin = async () => {
+    const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
+    if (!adminRole) return;
+
+    const adminCount = await prisma.user_roles.count({
+        where: { role_id: adminRole.id },
+    });
+    if (adminCount > 0) return;
+
+    const existingAdmin = await prisma.users.findFirst({
+        where: {
+            OR: [
+                { email: 'admin@cgi.com' },
+                { username: 'admin' },
+            ],
+        },
+    });
+
+    if (existingAdmin) {
+        await prisma.user_roles.upsert({
+            where: {
+                user_id_role_id: {
+                    user_id: existingAdmin.id,
+                    role_id: adminRole.id,
+                },
+            },
+            update: {},
+            create: {
+                user_id: existingAdmin.id,
+                role_id: adminRole.id,
+            },
+        });
+        return;
+    }
+
+    await prisma.users.create({
+        data: {
+            first_name: 'CGI',
+            last_name: 'Administrator',
+            name: 'CGI Administrator',
+            username: 'admin',
+            email: 'admin@cgi.com',
+            password_hash: 'AdminAdmin902',
+            must_change_password: false,
+            status: 'active',
+            user_roles: {
+                create: [{ role_id: adminRole.id }],
+            },
+        },
+    });
+
+    console.log('Default Administrator seeded (admin@cgi.com).');
+};
+
 const seedExcelData = async () => {
     const userCount = await prisma.users.count();
     if (userCount > 0) return;
@@ -521,5 +627,6 @@ const seedExcelData = async () => {
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
     await seedRoles();
+    await seedDefaultAdmin();
     await seedExcelData();
 });
