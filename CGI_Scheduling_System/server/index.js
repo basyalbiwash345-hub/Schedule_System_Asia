@@ -9,6 +9,13 @@ const app = express();
 const port = 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
+// ─ VALIDATION ─────────────────────────────────────────────────────────────────
+if (!JWT_SECRET) {
+    console.error('❌ ERROR: JWT_SECRET is not defined in .env file');
+    console.error('   Please add: JWT_SECRET="your_secret_key" to .env');
+    process.exit(1);
+}
+
 // ── IMPORT ROUTES ─────────────────────────────────────────────────────────────
 const rotationRoutes = require('./rotations');
 
@@ -21,20 +28,38 @@ app.use(express.json());
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        const user = await prisma.users.findUnique({
-            where: { username },
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        const loginKey = username?.includes('@') ? 'email' : 'username';
+        const user = await prisma.users.findFirst({
+            where: { [loginKey]: username },
             include: { user_roles: { include: { roles: true } } },
         });
 
-        console.log('Login attempt for:', username, 'Found user in DB?', !!user);
-        if (user) console.log('Hashed password in DB:', user.password_hash);
+        console.log(`\n📋 Login attempt for: ${username} (lookup: ${loginKey})`);
+        console.log(`   Found user: ${!!user}`);
+        if (user) {
+            console.log(`   User ID: ${user.id}, Name: ${user.name}, Status: ${user.status}`);
+            console.log(`   Roles: ${user.user_roles.map(ur => ur.roles.name).join(', ')}`);
+        }
 
-        if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+        if (!user) {
+            console.log(`   ❌ User not found\n`);
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) return res.status(401).json({ error: 'Invalid username or password' });
+        console.log(`   Password match: ${isMatch}`);
+        
+        if (!isMatch) {
+            console.log(`   ❌ Password mismatch\n`);
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
 
         const roles = user.user_roles.map(ur => ur.roles.name);
+        console.log(`   ✅ Authentication successful\n`);
 
         const token = jwt.sign(
             { id: user.id, username: user.username, roles: roles },
@@ -42,19 +67,18 @@ app.post('/api/login', async (req, res) => {
             { expiresIn: '8h' }
         );
 
-
-
         res.json({
             token,
             user: {
                 id: user.id,
                 name: user.name,
-                username: user.username, // ADDED: Critical for Header.js isAdmin check
+                username: user.username,
                 roles: roles,
-                user_roles: user.user_roles // ADDED: Critical for permissions check
+                user_roles: user.user_roles
             }
         });
     } catch (err) {
+        console.error('Login error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -592,13 +616,18 @@ app.listen(port, async () => {
     // FORCE CREATE ADMIN (Temporary for testing)
     try {
         const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
-        if (adminRole) {
+        if (!adminRole) {
+            console.error('❌ Administrator role not found. Roles may not be seeded.');
+        } else {
             const salt = await bcrypt.genSalt(10);
             const adminHash = await bcrypt.hash('AdminPass1!', salt);
 
-            await prisma.users.upsert({
+            const result = await prisma.users.upsert({
                 where: { username: 'admin' },
-                update: {}, // Don't change anything if they already exist
+                update: { 
+                    password_hash: adminHash,
+                    status: 'active'
+                },
                 create: {
                     first_name: 'System',
                     last_name: 'Admin',
@@ -610,10 +639,14 @@ app.listen(port, async () => {
                     user_roles: { create: [{ role_id: adminRole.id }] }
                 }
             });
-            console.log('🔑 Manual Admin Check: Ready');
+            console.log('🔑 Admin User Ready');
+            console.log('   Username: admin');
+            console.log('   Password: AdminPass1!');
+            console.log('   Email: admin@cgi.com');
+            console.log('   ID:', result.id);
         }
     } catch (e) {
-        console.log('Admin already exists or Error:', e.message);
+        console.error('⚠️  Admin creation issue:', e.message);
     }
 
     await seedRoles();

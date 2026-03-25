@@ -13,38 +13,58 @@ const Login = ({ onLoginSuccess }) => {// Removed onLogin prop as we handle it h
     const navigate = useNavigate();
     const [mode, setMode] = useState("login");
     const isRegister = mode === "register";
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
+    const [email, setEmail] = useState("");
     const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
+    const [successMessage, setSuccessMessage] = useState("");
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
+        setSuccessMessage("");
         setLoading(true);
 
         try {
-            const response = await fetch('http://localhost:5000/api/login', {
+            const url = isRegister ? 'http://localhost:5000/api/users' : 'http://localhost:5000/api/login';
+            const body = isRegister
+                ? { username: identifier, password, first_name: firstName, last_name: lastName, email }
+                : { username: identifier, password };
+
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: identifier, password }),
+                body: JSON.stringify(body),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                // 1. Store the JWT token and User Info
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify(data.user));
+                if (isRegister) {
+                    setSuccessMessage('Registration success. Please sign in.');
+                    setMode('login');
+                    setFirstName('');
+                    setLastName('');
+                    setEmail('');
+                    setIdentifier('');
+                    setPassword('');
+                } else {
+                    // 1. Store the JWT token and User Info
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
 
-                // 2. Notify App.js that login was successful
-                if (onLoginSuccess) {
-                    onLoginSuccess(data.user);
+                    // 2. Notify App.js that login was successful
+                    if (onLoginSuccess) {
+                        onLoginSuccess(data.user);
+                    }
+
+                    // 3. Redirect to Dashboard
+                    navigate('/dashboard', { replace: true });
                 }
-
-                // 3. Redirect to Dashboard
-                navigate('/dashboard', { replace: true });
             } else {
                 setError(data.error || "Invalid username or password.");
             }
@@ -103,8 +123,70 @@ const Login = ({ onLoginSuccess }) => {// Removed onLogin prop as we handle it h
                         </Alert>
                     )}
 
+                    {successMessage && (
+                        <Alert severity="success" sx={{ mb: 2, borderRadius: '8px' }}>
+                            {successMessage}
+                        </Alert>
+                    )}
+
                     {/* Form */}
                     <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {isRegister && (
+                            <>
+                                <TextField
+                                    label="First Name"
+                                    type="text"
+                                    value={firstName}
+                                    onChange={e => setFirstName(e.target.value)}
+                                    placeholder="e.g. John"
+                                    required
+                                    fullWidth
+                                    size="small"
+                                    sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: '8px',
+                                            '&.Mui-focused fieldset': { borderColor: '#e31937' }
+                                        },
+                                        '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' }
+                                    }}
+                                />
+                                <TextField
+                                    label="Last Name"
+                                    type="text"
+                                    value={lastName}
+                                    onChange={e => setLastName(e.target.value)}
+                                    placeholder="e.g. Doe"
+                                    required
+                                    fullWidth
+                                    size="small"
+                                    sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: '8px',
+                                            '&.Mui-focused fieldset': { borderColor: '#e31937' }
+                                        },
+                                        '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' }
+                                    }}
+                                />
+                                <TextField
+                                    label="Email"
+                                    type="email"
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                    placeholder="e.g. john.doe@example.com"
+                                    required
+                                    fullWidth
+                                    size="small"
+                                    sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: '8px',
+                                            '&.Mui-focused fieldset': { borderColor: '#e31937' }
+                                        },
+                                        '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' }
+                                    }}
+                                />
+                            </>
+                        )}
+
                         <TextField
                             label="Username"
                             type="text"
