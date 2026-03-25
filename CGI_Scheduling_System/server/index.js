@@ -495,7 +495,23 @@ const seedRoles = async () => {
 
 const seedExcelData = async () => {
     const userCount = await prisma.users.count();
-    if (userCount > 0) return;
+    if (userCount > 0) {
+        // UPDATE EXISTING USERS' PASSWORDS (similar to admin fix)
+        console.log('🔄 Updating existing users\' passwords...');
+        const salt = await bcrypt.genSalt(10);
+        const tempPassHash = await bcrypt.hash('TempPass1!', salt);
+        
+        // Update all non-admin users to have correct password
+        const updateResult = await prisma.users.updateMany({
+            where: { 
+                username: { not: 'admin' },
+                status: 'active'
+            },
+            data: { password_hash: tempPassHash }
+        });
+        console.log(`✅ Updated ${updateResult.count} users with correct password`);
+        return;
+    }
 
     const teamNames = [
         { name: 'CDO FDN Subsurface and Land', color: '#e31937' },
