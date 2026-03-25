@@ -2,15 +2,105 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const prisma = require('./db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = 5000;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// ─ VALIDATION ─────────────────────────────────────────────────────────────────
+if (!JWT_SECRET) {
+    console.error('❌ ERROR: JWT_SECRET is not defined in .env file');
+    console.error('   Please add: JWT_SECRET="your_secret_key" to .env');
+    process.exit(1);
+}
 
 // ── IMPORT ROUTES ─────────────────────────────────────────────────────────────
 const rotationRoutes = require('./rotations');
 
 app.use(cors());
 app.use(express.json());
+
+
+
+// ── NEW LOGIN ROUTE (ADD HERE) ────────────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        const loginKey = username?.includes('@') ? 'email' : 'username';
+        const user = await prisma.users.findFirst({
+            where: { [loginKey]: username },
+            include: { user_roles: { include: { roles: true } } },
+        });
+
+        console.log(`\n📋 Login attempt for: ${username} (lookup: ${loginKey})`);
+        console.log(`   Found user: ${!!user}`);
+        if (user) {
+            console.log(`   User ID: ${user.id}, Name: ${user.name}, Status: ${user.status}`);
+            console.log(`   Roles: ${user.user_roles.map(ur => ur.roles.name).join(', ')}`);
+        }
+
+        if (!user) {
+            console.log(`   ❌ User not found\n`);
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        console.log(`   Password match: ${isMatch}`);
+        
+        if (!isMatch) {
+            console.log(`   ❌ Password mismatch\n`);
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        const roles = user.user_roles.map(ur => ur.roles.name);
+        console.log(`   ✅ Authentication successful\n`);
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, roles: roles },
+            JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                name: user.name,
+                username: user.username,
+                roles: roles,
+                user_roles: user.user_roles
+            }
+        });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. MIDDLEWARE: Admin Protection (ADD THIS HERE)
+// This defines the "lock" but doesn't apply it yet.
+const authorizeAdmin = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (!decoded.roles.includes('Administrator')) {
+            return res.status(403).json({ error: 'Access denied: Admins only' });
+        }
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(401).json({ error: 'Token is not valid' });
+    }
+};
 
 // ── USE ROUTES ────────────────────────────────────────────────────────────────
 app.use('/api/rotations', rotationRoutes);
@@ -180,11 +270,13 @@ app.post('/api/users', async (req, res) => {
             if (!team) return res.status(400).json({ errors: { team_id: 'Selected team is invalid.' } });
         }
         const fullName = `${first_name.trim()} ${last_name.trim()}`;
+        const salt = await bcrypt.genSalt(10);
+        const hashedPw = await bcrypt.hash(password, salt);
         const newUser = await prisma.users.create({
             data: {
                 first_name: first_name.trim(), last_name: last_name.trim(),
                 name: fullName, username: username.trim(),
-                email: email.trim().toLowerCase(), password_hash: password,
+                email: email.trim().toLowerCase(), password_hash: hashedPw,
                 phone: phone?.trim() || null, location: location?.trim() || null,
                 team_id: team_id ? Number(team_id) : null,
                 must_change_password: true, status: 'active',
@@ -248,8 +340,7 @@ app.put('/api/users/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
-    const userId = parseInt(req.params.id);
+app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {    const userId = parseInt(req.params.id);
     try {
         const existing = await prisma.users.findUnique({
             where: { id: userId },
@@ -319,8 +410,7 @@ app.get('/api/teams', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/teams', async (req, res) => {
-    try {
+app.post('/api/teams', authorizeAdmin, async (req, res) => {    try {
         const { name, color, leadId, description, members } = req.body;
         const team = await prisma.teams.create({
             data: {
@@ -335,7 +425,7 @@ app.post('/api/teams', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/teams/:id', async (req, res) => {
+app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
     const { name, color, leadId, description, members } = req.body;
     try {
@@ -511,7 +601,23 @@ const seedDefaultAdmin = async () => {
 
 const seedExcelData = async () => {
     const userCount = await prisma.users.count();
-    if (userCount > 0) return;
+    if (userCount > 0) {
+        // UPDATE EXISTING USERS' PASSWORDS (similar to admin fix)
+        console.log('🔄 Updating existing users\' passwords...');
+        const salt = await bcrypt.genSalt(10);
+        const tempPassHash = await bcrypt.hash('TempPass1!', salt);
+        
+        // Update all non-admin users to have correct password
+        const updateResult = await prisma.users.updateMany({
+            where: { 
+                username: { not: 'admin' },
+                status: 'active'
+            },
+            data: { password_hash: tempPassHash }
+        });
+        console.log(`✅ Updated ${updateResult.count} users with correct password`);
+        return;
+    }
 
     const teamNames = [
         { name: 'CDO FDN Subsurface and Land', color: '#e31937' },
@@ -608,12 +714,14 @@ const seedExcelData = async () => {
         const username   = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) + Math.floor(Math.random() * 99);
         const email      = username + '@cgi.com';
         const teamId     = createdTeams[emp.team];
+        const salt = await bcrypt.genSalt(10);
+        const seedHash = await bcrypt.hash('TempPass1!', salt);
         try {
             await prisma.users.create({
                 data: {
                     first_name, last_name, name: emp.name,
-                    username, email, password_hash: 'TempPass1!',
-                    team_id: teamId || null,
+                    username, email,
+                    password_hash: seedHash, // Save hashed version for seeded users                    team_id: teamId || null,
                     must_change_password: true, status: 'active',
                     ...(employeeRole ? { user_roles: { create: [{ role_id: employeeRole.id }] } } : {}),
                 },
@@ -626,6 +734,43 @@ const seedExcelData = async () => {
 // ── START SERVER ──────────────────────────────────────────────────────────────
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
+
+    // FORCE CREATE ADMIN (Temporary for testing)
+    try {
+        const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
+        if (!adminRole) {
+            console.error('❌ Administrator role not found. Roles may not be seeded.');
+        } else {
+            const salt = await bcrypt.genSalt(10);
+            const adminHash = await bcrypt.hash('AdminPass1!', salt);
+
+            const result = await prisma.users.upsert({
+                where: { username: 'admin' },
+                update: { 
+                    password_hash: adminHash,
+                    status: 'active'
+                },
+                create: {
+                    first_name: 'System',
+                    last_name: 'Admin',
+                    name: 'CGI Administrator',
+                    username: 'admin',
+                    email: 'admin@cgi.com',
+                    password_hash: adminHash,
+                    status: 'active',
+                    user_roles: { create: [{ role_id: adminRole.id }] }
+                }
+            });
+            console.log('🔑 Admin User Ready');
+            console.log('   Username: admin');
+            console.log('   Password: AdminPass1!');
+            console.log('   Email: admin@cgi.com');
+            console.log('   ID:', result.id);
+        }
+    } catch (e) {
+        console.error('⚠️  Admin creation issue:', e.message);
+    }
+
     await seedRoles();
     await seedDefaultAdmin();
     await seedExcelData();
