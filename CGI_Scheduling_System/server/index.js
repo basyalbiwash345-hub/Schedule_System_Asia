@@ -6,8 +6,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-const port = 5000;
+const port = Number(process.env.PORT) || 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
+const COMMON_ADMIN_USERNAME = process.env.ADMIN_USERNAME?.trim() || 'admin';
+const COMMON_ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase() || 'admin@cgi.com';
+const COMMON_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'AdminPass1!';
+const COMMON_ADMIN_FIRST_NAME = process.env.ADMIN_FIRST_NAME?.trim() || 'System';
+const COMMON_ADMIN_LAST_NAME = process.env.ADMIN_LAST_NAME?.trim() || 'Admin';
 
 // ─ VALIDATION ─────────────────────────────────────────────────────────────────
 if (!JWT_SECRET) {
@@ -154,6 +159,43 @@ const serializeAuthenticatedUser = (user) => {
     };
 };
 
+const buildCommonAdminName = () =>
+    `${COMMON_ADMIN_FIRST_NAME} ${COMMON_ADMIN_LAST_NAME}`.trim();
+
+const isCommonAdminIdentifier = (identifier = '') => {
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    return normalizedIdentifier === COMMON_ADMIN_USERNAME.toLowerCase()
+        || normalizedIdentifier === COMMON_ADMIN_EMAIL;
+};
+
+const hashPassword = async (password) => {
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
+};
+
+const verifyStoredPassword = async (storedPasswordHash, password) => {
+    if (!storedPasswordHash || !password) return false;
+    if (storedPasswordHash === password) return true;
+    try {
+        return await bcrypt.compare(password, storedPasswordHash);
+    } catch {
+        return false;
+    }
+};
+
+const findUserForAuth = async (identifier) => {
+    const normalizedEmail = identifier.toLowerCase();
+    return prisma.users.findFirst({
+        where: {
+            OR: [
+                { email: normalizedEmail },
+                { username: identifier },
+            ],
+        },
+        include: { user_roles: { include: { roles: true } } },
+    });
+};
+
 const validateUserPayload = (body, isUpdate = false) => {
     const errors = {};
     if (!isUpdate) {
@@ -205,22 +247,29 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(400).json({ error: 'Email/username and password are required.' });
 
     try {
-        const normalizedEmail = identifier.toLowerCase();
-        const user = await prisma.users.findFirst({
-            where: {
-                OR: [
-                    { email: normalizedEmail },
-                    { username: identifier },
-                ],
-            },
-            include: { user_roles: { include: { roles: true } } },
-        });
+        if (isCommonAdminIdentifier(identifier) && password === COMMON_ADMIN_PASSWORD) {
+            const adminUser = await seedDefaultAdmin();
+            if (!adminUser)
+                return res.status(500).json({ error: 'Administrator role is unavailable.' });
 
-        if (!user || user.password_hash !== password)
+            return res.json({ user: serializeAuthenticatedUser(adminUser) });
+        }
+
+        const user = await findUserForAuth(identifier);
+        const passwordMatches = await verifyStoredPassword(user?.password_hash, password);
+
+        if (!user || !passwordMatches)
             return res.status(401).json({ error: 'Invalid email/username or password.' });
 
         if (user.status && user.status !== 'active')
             return res.status(403).json({ error: 'This account is inactive.' });
+
+        if (user.password_hash === password) {
+            await prisma.users.update({
+                where: { id: user.id },
+                data: { password_hash: await hashPassword(password) },
+            });
+        }
 
         res.json({ user: serializeAuthenticatedUser(user) });
     } catch (err) {
@@ -549,21 +598,32 @@ const seedDefaultAdmin = async () => {
     const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
     if (!adminRole) return;
 
-    const adminCount = await prisma.user_roles.count({
-        where: { role_id: adminRole.id },
-    });
-    if (adminCount > 0) return;
+    const baseAdminData = {
+        first_name: COMMON_ADMIN_FIRST_NAME,
+        last_name: COMMON_ADMIN_LAST_NAME,
+        name: buildCommonAdminName(),
+        username: COMMON_ADMIN_USERNAME,
+        email: COMMON_ADMIN_EMAIL,
+        password_hash: await hashPassword(COMMON_ADMIN_PASSWORD),
+        must_change_password: false,
+        status: 'active',
+    };
 
     const existingAdmin = await prisma.users.findFirst({
         where: {
             OR: [
-                { email: 'admin@cgi.com' },
-                { username: 'admin' },
+                { email: COMMON_ADMIN_EMAIL },
+                { username: COMMON_ADMIN_USERNAME },
             ],
         },
     });
 
     if (existingAdmin) {
+        await prisma.users.update({
+            where: { id: existingAdmin.id },
+            data: baseAdminData,
+        });
+
         await prisma.user_roles.upsert({
             where: {
                 user_id_role_id: {
@@ -577,47 +637,27 @@ const seedDefaultAdmin = async () => {
                 role_id: adminRole.id,
             },
         });
-        return;
+    } else {
+        await prisma.users.create({
+            data: {
+                ...baseAdminData,
+                user_roles: {
+                    create: [{ role_id: adminRole.id }],
+                },
+            },
+        });
     }
 
-    await prisma.users.create({
-        data: {
-            first_name: 'CGI',
-            last_name: 'Administrator',
-            name: 'CGI Administrator',
-            username: 'admin',
-            email: 'admin@cgi.com',
-            password_hash: 'AdminAdmin902',
-            must_change_password: false,
-            status: 'active',
-            user_roles: {
-                create: [{ role_id: adminRole.id }],
-            },
-        },
+    return prisma.users.findFirst({
+        where: { username: COMMON_ADMIN_USERNAME },
+        include: { user_roles: { include: { roles: true } } },
     });
-
-    console.log('Default Administrator seeded (admin@cgi.com).');
 };
 
 const seedExcelData = async () => {
     const userCount = await prisma.users.count();
-    if (userCount > 0) {
-        // UPDATE EXISTING USERS' PASSWORDS (similar to admin fix)
-        console.log('🔄 Updating existing users\' passwords...');
-        const salt = await bcrypt.genSalt(10);
-        const tempPassHash = await bcrypt.hash('TempPass1!', salt);
-        
-        // Update all non-admin users to have correct password
-        const updateResult = await prisma.users.updateMany({
-            where: { 
-                username: { not: 'admin' },
-                status: 'active'
-            },
-            data: { password_hash: tempPassHash }
-        });
-        console.log(`✅ Updated ${updateResult.count} users with correct password`);
+    if (userCount > 0)
         return;
-    }
 
     const teamNames = [
         { name: 'CDO FDN Subsurface and Land', color: '#e31937' },
@@ -735,43 +775,22 @@ const seedExcelData = async () => {
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
 
-    // FORCE CREATE ADMIN (Temporary for testing)
+    
     try {
-        const adminRole = await prisma.roles.findFirst({ where: { name: 'Administrator' } });
-        if (!adminRole) {
+        await seedRoles();
+        const result = await seedDefaultAdmin();
+        if (!result) {
             console.error('❌ Administrator role not found. Roles may not be seeded.');
         } else {
-            const salt = await bcrypt.genSalt(10);
-            const adminHash = await bcrypt.hash('AdminPass1!', salt);
-
-            const result = await prisma.users.upsert({
-                where: { username: 'admin' },
-                update: { 
-                    password_hash: adminHash,
-                    status: 'active'
-                },
-                create: {
-                    first_name: 'System',
-                    last_name: 'Admin',
-                    name: 'CGI Administrator',
-                    username: 'admin',
-                    email: 'admin@cgi.com',
-                    password_hash: adminHash,
-                    status: 'active',
-                    user_roles: { create: [{ role_id: adminRole.id }] }
-                }
-            });
             console.log('🔑 Admin User Ready');
-            console.log('   Username: admin');
-            console.log('   Password: AdminPass1!');
-            console.log('   Email: admin@cgi.com');
+            console.log(`   Username: ${COMMON_ADMIN_USERNAME}`);
+            console.log(`   Password: ${COMMON_ADMIN_PASSWORD}`);
+            console.log(`   Email: ${COMMON_ADMIN_EMAIL}`);
             console.log('   ID:', result.id);
         }
     } catch (e) {
         console.error('⚠️  Admin creation issue:', e.message);
     }
 
-    await seedRoles();
-    await seedDefaultAdmin();
     await seedExcelData();
 });

@@ -1,6 +1,9 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
+const adminPassword = process.env.ADMIN_PASSWORD || 'AdminPass1!';
 
 async function listUsers() {
     try {
@@ -23,7 +26,7 @@ async function listUsers() {
             console.log(`   Name: ${user.name}`);
             console.log(`   Username: ${user.username}`);
             console.log(`   Email: ${user.email}`);
-            console.log(`   Password: ${user.username === 'admin' ? 'AdminPass1!' : 'TempPass1!'}`);
+            console.log(`   Password: ${user.username === adminUsername ? adminPassword : 'TempPass1!'}`);
             console.log(`   Role: ${user.user_roles.map(ur => ur.roles.name).join(', ')}`);
             console.log(`   Team: ${user.team_id ? teamMap[user.team_id] || 'Unknown Team' : 'Unassigned'}`);
             console.log(`   Status: ${user.status}`);

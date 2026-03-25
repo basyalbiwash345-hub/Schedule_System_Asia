@@ -1,14 +1,17 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
+const adminPassword = process.env.ADMIN_PASSWORD || 'AdminPass1!';
 
 async function testLogin() {
     try {
         console.log('\n🔍 Checking admin user in database...\n');
         
         const admin = await prisma.users.findFirst({
-            where: { username: 'admin' },
+            where: { username: adminUsername },
             include: { user_roles: { include: { roles: true } } },
         });
         
@@ -27,11 +30,13 @@ async function testLogin() {
         console.log('\n🔑 Password hash in DB:', admin.password_hash.substring(0, 20) + '...');
         
         // Test password comparison
-        const testPassword = 'AdminPass1!';
+        const testPassword = adminPassword;
         console.log('\n🧪 Testing password comparison:');
         console.log('   Input password:', testPassword);
         
-        const matches = await bcrypt.compare(testPassword, admin.password_hash);
+        const matches = admin.password_hash === testPassword
+            ? true
+            : await bcrypt.compare(testPassword, admin.password_hash);
         console.log('   Password matches:', matches ? '✅ YES' : '❌ NO');
         
         if (!matches) {
