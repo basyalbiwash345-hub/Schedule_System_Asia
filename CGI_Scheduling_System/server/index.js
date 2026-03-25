@@ -27,9 +27,7 @@ const rotationRoutes = require('./rotations');
 app.use(cors());
 app.use(express.json());
 
-
-
-// ── NEW LOGIN ROUTE (ADD HERE) ────────────────────────────────────────────────
+// ── NEW LOGIN ROUTE ────────────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -57,7 +55,7 @@ app.post('/api/login', async (req, res) => {
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         console.log(`   Password match: ${isMatch}`);
-        
+
         if (!isMatch) {
             console.log(`   ❌ Password mismatch\n`);
             return res.status(401).json({ error: 'Invalid username or password' });
@@ -88,8 +86,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 3. MIDDLEWARE: Admin Protection (ADD THIS HERE)
-// This defines the "lock" but doesn't apply it yet.
+// ── MIDDLEWARE: Admin Protection ───────────────────────────────────────────────
 const authorizeAdmin = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
@@ -238,7 +235,7 @@ const logAction = async (userId, action, entityType, entityId, oldValue = null, 
     } catch (err) { console.error('Audit log failed:', err.message); }
 };
 
-// ── AUTH ─────────────────────────────────────────────────────────────────────
+// ── AUTH ──────────────────────────────────────────────────────────────────────
 app.post('/api/auth/login', async (req, res) => {
     const identifier = req.body.identifier?.trim();
     const password = req.body.password;
@@ -389,7 +386,9 @@ app.put('/api/users/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {    const userId = parseInt(req.params.id);
+// FIX #4: Added authorizeAdmin middleware to DELETE /api/users/:id
+app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {
+    const userId = parseInt(req.params.id);
     try {
         const existing = await prisma.users.findUnique({
             where: { id: userId },
@@ -397,7 +396,6 @@ app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {    const user
         });
         if (!existing) return res.status(404).json({ error: 'User not found.' });
 
-        // Block if only Administrator
         const isAdmin = existing.user_roles.some(ur => ur.roles.name === 'Administrator');
         if (isAdmin) {
             const adminCount = await prisma.user_roles.count({
@@ -407,7 +405,6 @@ app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {    const user
                 return res.status(400).json({ error: 'Cannot delete the only Administrator in the system. Assign another Administrator first.' });
         }
 
-        // Block if active shift assignments
         const activeAssignments = await prisma.rotation_assignments.count({
             where: { user_id: userId, status: 'scheduled', end_time: { gte: new Date() } },
         });
@@ -459,7 +456,8 @@ app.get('/api/teams', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/teams', authorizeAdmin, async (req, res) => {    try {
+app.post('/api/teams', authorizeAdmin, async (req, res) => {
+    try {
         const { name, color, leadId, description, members } = req.body;
         const team = await prisma.teams.create({
             data: {
@@ -492,7 +490,8 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/teams/:id', async (req, res) => {
+// FIX #4: Added authorizeAdmin middleware to DELETE /api/teams/:id
+app.delete('/api/teams/:id', authorizeAdmin, async (req, res) => {
     const teamId = parseOptionalInt(req.params.id);
     try {
         await prisma.teams.delete({ where: { id: teamId } });
@@ -759,10 +758,16 @@ const seedExcelData = async () => {
         try {
             await prisma.users.create({
                 data: {
-                    first_name, last_name, name: emp.name,
-                    username, email,
-                    password_hash: seedHash, // Save hashed version for seeded users                    team_id: teamId || null,
-                    must_change_password: true, status: 'active',
+                    first_name,
+                    last_name,
+                    name: emp.name,
+                    username,
+                    email,
+                    password_hash: seedHash,
+                    // FIX #3: Separated password_hash and team_id onto their own lines
+                    team_id: teamId || null,
+                    must_change_password: true,
+                    status: 'active',
                     ...(employeeRole ? { user_roles: { create: [{ role_id: employeeRole.id }] } } : {}),
                 },
             });
@@ -775,7 +780,6 @@ const seedExcelData = async () => {
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
 
-    
     try {
         await seedRoles();
         const result = await seedDefaultAdmin();

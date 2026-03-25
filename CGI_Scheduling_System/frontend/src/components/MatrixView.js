@@ -1,30 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
-    Box, Typography, Chip, Select, MenuItem, FormControl,
-    InputLabel, Tooltip, Paper, IconButton, CircularProgress,
-    ToggleButton, ToggleButtonGroup, TextField
-} from '@mui/material';
-import {
-    ChevronLeft as PrevIcon,
-    ChevronRight as NextIcon,
-    Today as TodayIcon,
-    CalendarMonth as MonthIcon,
-    DateRange as DateRangeIcon,
-} from '@mui/icons-material';
-import {
-    DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
-    useDroppable, useDraggable,
-} from '@dnd-kit/core';
-import {
-    SortableContext, verticalListSortingStrategy,
-    useSortable, arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import React, { useRef, useEffect, useState, useCallback, useMemo, useReducer } from 'react';
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_IN_MONTH = [31,28,31,30,31,30,31,31,30,31,30,31];
-const DAY_ABBREVS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 const CODE_COLORS = {
     'V':    { bg: '#fef3c7', color: '#92400e', label: 'Vacation' },
@@ -40,835 +18,685 @@ const CODE_COLORS = {
     'CLEAR':{ bg: '#f3f4f6', color: '#6b7280', label: 'Clear cell' },
 };
 
-const CELL  = 28;
-const NAME_W = 200;
+// Canvas layout constants
+const CELL_W     = 28;
+const CELL_H     = 28;
+const NAME_W     = 200;
+const HEADER_H   = 44;
+const TEAM_HDR_H = 26;
+
+// ── PALETTE (light theme) ─────────────────────────────────────────────────────
+const PALETTE = {
+    bg:          '#ffffff',
+    headerBg:    '#f9fafb',
+    labelBg:     '#f9fafb',
+    gridLine:    '#e5e7eb',
+    weekendBg:   '#f9fafb',
+    todayBg:     '#fff7f7',
+    teamHdrBg:   '#f3f4f6',
+    text:        '#374151',
+    textDim:     '#9ca3af',
+    selectFill:  'rgba(227,25,55,0.08)',
+    selectBorder:'rgba(227,25,55,0.7)',
+    accent:      '#e31937',
+};
 
 // ── DATE HELPERS ──────────────────────────────────────────────────────────────
-const getDatesForMonth = (monthIdx) =>
-    Array.from({ length: DAYS_IN_MONTH[monthIdx] }, (_, i) =>
-        `2026-${String(monthIdx + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
-    );
-
-const getDatesForRange = (startDate, endDate) => {
-    if (!startDate || !endDate) return [];
-    const dates = [];
-    const cur = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T00:00:00');
-    if (cur > end) return [];
-    // Cap at 365 days to avoid massive grids
-    let count = 0;
-    while (cur <= end && count < 365) {
-        dates.push(cur.toISOString().split('T')[0]);
-        cur.setDate(cur.getDate() + 1);
-        count++;
-    }
-    return dates;
+const getDaysInMonth = (year, monthIdx) => {
+    // Correctly handles leap years
+    return new Date(year, monthIdx + 1, 0).getDate();
 };
 
-const getDayOfWeek = (d) => new Date(d + 'T00:00:00').getDay();
-const isWeekend    = (d) => { const dow = getDayOfWeek(d); return dow === 0 || dow === 6; };
-
-// Get unique months covered by a date range for fetching
-const getMonthsInRange = (dates) => {
-    const months = new Set();
-    dates.forEach(d => months.add(d.substring(0, 7)));
-    return Array.from(months);
+const getDatesForMonth = (year, monthIdx) => {
+    const count = getDaysInMonth(year, monthIdx);
+    return Array.from({ length: count }, (_, i) =>
+        `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+    );
 };
 
-// ── DRAGGABLE CODE CHIP ───────────────────────────────────────────────────────
-function DraggableCode({ code, cfg, highlightCode, activeCode, onCodeClick }) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `code-${code}`, data: { type: 'code', code }
-    });
-    const isActive = activeCode === code;
-    return (
-        <Tooltip title={isActive ? `${cfg.label} — click cells to assign (Esc to cancel)` : cfg.label} placement="bottom">
-            <Chip
-                ref={setNodeRef} {...attributes} {...listeners}
-                label={code} size="small"
-                onClick={(e) => { e.stopPropagation(); onCodeClick(code); }}
-                sx={{
-                    backgroundColor: isActive ? cfg.color : highlightCode === code ? cfg.color : cfg.bg,
-                    color: isActive || highlightCode === code ? '#fff' : cfg.color,
-                    fontWeight: 800, fontSize: '0.68rem',
-                    cursor: isActive ? 'crosshair' : 'grab', height: 24,
-                    border: `2px solid ${isActive ? cfg.color : cfg.color + '33'}`,
-                    outline: isActive ? `3px solid ${cfg.color}66` : 'none',
-                    outlineOffset: '2px',
-                    opacity: isDragging ? 0.35 : 1,
-                    transition: 'all 0.12s',
-                    touchAction: 'none',
-                    userSelect: 'none',
-                    transform: isActive ? 'translateY(-2px)' : 'none',
-                    boxShadow: isActive ? `0 4px 12px ${cfg.color}55` : 'none',
-                    '&:hover': { backgroundColor: cfg.color, color: '#fff', transform: 'translateY(-1px)', boxShadow: `0 2px 8px ${cfg.color}55` },
-                }}
-            />
-        </Tooltip>
-    );
-}
+const getDayOfWeek = (dateStr) => new Date(dateStr + 'T00:00:00').getDay();
+const isWeekend    = (dateStr) => { const d = getDayOfWeek(dateStr); return d === 0 || d === 6; };
 
-// ── DROPPABLE CELL ────────────────────────────────────────────────────────────
-function DroppableCell({ id, code, cfg, isToday, isWeekendDay, empIdx, isRangeTarget, activeCode }) {
-    const { setNodeRef, isOver } = useDroppable({ id, data: { type: 'cell' } });
-    const highlight = isOver || isRangeTarget;
-    return (
-        <Box ref={setNodeRef} sx={{
-            width: CELL, minWidth: CELL, flexShrink: 0, height: CELL,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backgroundColor: highlight ? '#fef2f2'
-                : isToday ? '#fff7f7'
-                    : isWeekendDay ? (empIdx % 2 === 0 ? '#f9fafb' : '#f4f4f5')
-                        : 'transparent',
-            borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6',
-            outline: highlight ? '2px solid #e31937' : activeCode ? '1px dashed #e31937' : 'none',
-            outlineOffset: '-2px',
-            cursor: activeCode ? 'crosshair' : 'default',
-            transition: 'background 0.08s',
-            '&:hover': activeCode ? { backgroundColor: '#fef2f2', outline: '2px solid #e31937' } : {},
-        }}>
-            {code && (
-                <Box sx={{
-                    width: CELL - 4, height: CELL - 4, borderRadius: '4px',
-                    backgroundColor: cfg?.bg || '#e5e7eb',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                }}>
-                    <Typography fontSize="0.58rem" fontWeight={800}
-                                color={cfg?.color || '#6b7280'}
-                                sx={{ letterSpacing: '-0.02em', lineHeight: 1 }}>
-                        {code}
-                    </Typography>
-                </Box>
-            )}
-        </Box>
-    );
-}
-
-// ── SORTABLE EMPLOYEE ROW ─────────────────────────────────────────────────────
-function SortableRow({ emp, dates, schedule, today, highlightCode, teamColor, empIdx, rangeDrag, activeCode, onCellClick }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-        useSortable({ id: String(emp.id) });
-
-    const overlayRef = React.useRef(null);
-
-    // Click handler on the transparent overlay — completely above dnd-kit
-    const handleOverlayClick = React.useCallback((e) => {
-        if (!activeCode || !onCellClick) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const cellIndex = Math.floor(x / CELL);
-        if (cellIndex >= 0 && cellIndex < dates.length) {
-            onCellClick(`${emp.id}_${dates[cellIndex]}`);
-        }
-    }, [activeCode, onCellClick, dates, emp.id]);
-
-    return (
-        <Box ref={setNodeRef}
-             style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
-             sx={{
-                 display: 'flex',
-                 backgroundColor: empIdx % 2 === 0 ? '#ffffff' : '#fafafa',
-                 '&:hover': { backgroundColor: '#fef9f9' },
-                 borderBottom: '1px solid #f0f0f0',
-                 transition: 'background 0.08s',
-                 position: 'relative',
-             }}>
-
-            {/* Name cell */}
-            <Box sx={{
-                width: NAME_W, minWidth: NAME_W, flexShrink: 0,
-                position: 'sticky', left: 0, zIndex: 5,
-                backgroundColor: empIdx % 2 === 0 ? '#ffffff' : '#fafafa',
-                borderRight: '2px solid #e5e7eb',
-                borderLeft: `3px solid ${teamColor}`,
-                display: 'flex', alignItems: 'center', px: 1, gap: 0.75, height: CELL,
-            }}>
-                <Box {...attributes} {...listeners} sx={{
-                    cursor: 'grab', color: '#e5e7eb', fontSize: '0.85rem',
-                    px: 0.25, flexShrink: 0, lineHeight: 1,
-                    '&:hover': { color: '#9ca3af' },
-                    '&:active': { cursor: 'grabbing' },
-                }}>⠿</Box>
-                <Box sx={{
-                    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                    backgroundColor: teamColor + '20', color: teamColor,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.6rem', fontWeight: 800,
-                }}>
-                    {emp.name.charAt(0)}
-                </Box>
-                <Typography fontSize="0.76rem" fontWeight={500} color="#374151" noWrap>
-                    {emp.name}
-                </Typography>
-            </Box>
-
-            {/* Schedule cells */}
-            <Box sx={{ display: 'flex' }}>
-                {dates.map(date => {
-                    const entry  = schedule[`${emp.id}_${date}`];
-                    const code   = entry?.code?.toUpperCase() || null;
-                    const cfg    = code ? CODE_COLORS[code] : null;
-                    const dimmed = highlightCode && code !== highlightCode;
-                    const isRangeTarget = rangeDrag?.empId === emp.id && rangeDrag?.dates?.includes(date);
-                    return (
-                        <Box key={date} sx={{ opacity: dimmed ? 0.1 : 1, transition: 'opacity 0.12s' }}>
-                            <DroppableCell
-                                id={`${emp.id}_${date}`}
-                                code={code} cfg={cfg}
-                                isToday={date === today}
-                                isWeekendDay={isWeekend(date)}
-                                empIdx={empIdx}
-                                isRangeTarget={isRangeTarget}
-                                activeCode={activeCode}
-                            />
-                        </Box>
-                    );
-                })}
-            </Box>
-
-
-        </Box>
-    );
-}
-
-// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
-export default function MatrixView() {
-    // View mode: 'month' | 'range'
-    const [viewMode,       setViewMode]       = useState('month');
-    const [selectedMonth,  setSelectedMonth]  = useState(new Date().getMonth());
-    const [rangeStart,     setRangeStart]     = useState('');
-    const [rangeEnd,       setRangeEnd]       = useState('');
-    const [filterTeams,    setFilterTeams]    = useState([]);
-    const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
-    const [highlightCode,  setHighlightCode]  = useState(null);
-    const [employees,      setEmployees]      = useState([]);
-    const [employeeOrder,  setEmployeeOrder]  = useState([]);
-    const [schedule,       setSchedule]       = useState({});
-    const [loading,        setLoading]        = useState(true);
-    const [scheduleLoading,setScheduleLoading]= useState(false);
-    const [activeDrag,     setActiveDrag]     = useState(null);
-    const [activeCode,     setActiveCode]     = useState(null); // click-to-assign mode
-    const [rangeDrag,      setRangeDrag]      = useState(null);
-    const todayRef = useRef(null);
-    const dropdownRef = useRef(null);
-    const gridRef = useRef(null);
-
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-                setTeamDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    // Escape key deselects active code
-    useEffect(() => {
-        const handleKeyDown = (e) => { if (e.key === 'Escape') setActiveCode(null); };
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, []);
-
-    // Grid-level click handler moved below dates/grouped declarations
-
-    const today = new Date().toISOString().split('T')[0];
-
-    // Compute dates based on view mode
-    const dates = viewMode === 'month'
-        ? getDatesForMonth(selectedMonth)
-        : getDatesForRange(rangeStart, rangeEnd);
-
-    const month = `2026-${String(selectedMonth + 1).padStart(2, '0')}`;
-
-    // When click-to-assign is active, disable dnd by requiring huge drag distance
-    // This lets pointer events reach our row-level click handler
-    const sensors = useSensors(useSensor(PointerSensor, {
-        activationConstraint: { distance: activeCode ? 99999 : 1 }
-    }));
-
-    // ── FETCH EMPLOYEES ───────────────────────────────────────────────────────
-    const fetchEmployees = useCallback(async () => {
-        try {
-            const res  = await fetch('/api/matrix-users');
-            const data = await res.json();
-            setEmployees(data);
-            setEmployeeOrder(data.map(e => String(e.id)));
-        } catch { setEmployees([]); }
-    }, []);
-
-    // ── FETCH SCHEDULE ────────────────────────────────────────────────────────
-    const fetchScheduleForMonths = useCallback(async (monthList) => {
-        const allEntries = [];
-        await Promise.all(monthList.map(async (m) => {
-            try {
-                const res  = await fetch(`/api/schedule?month=${m}`);
-                const data = await res.json();
-                allEntries.push(...data);
-            } catch {}
-        }));
-        const map = {};
-        allEntries.forEach(e => { map[`${e.user_id}_${e.date}`] = e; });
-        return map;
-    }, []);
-
-    const fetchSchedule = useCallback(async (datesToFetch) => {
-        setScheduleLoading(true);
-        const months = datesToFetch.length > 0
-            ? getMonthsInRange(datesToFetch)
-            : [month];
-        const map = await fetchScheduleForMonths(months);
-        setSchedule(map);
-        setScheduleLoading(false);
-    }, [month, fetchScheduleForMonths]);
-
-    // Initial load
-    useEffect(() => {
-        setLoading(true);
-        fetchEmployees().finally(() => setLoading(false));
-    }, [fetchEmployees]);
-
-    // Fetch schedule when month changes (month mode)
-    useEffect(() => {
-        if (viewMode === 'month') {
-            fetchSchedule(getDatesForMonth(selectedMonth));
-        }
-    }, [selectedMonth, viewMode]);
-
-    // Fetch schedule when date range changes (range mode)
-    useEffect(() => {
-        if (viewMode === 'range' && rangeStart && rangeEnd && rangeStart <= rangeEnd) {
-            const rangeDates = getDatesForRange(rangeStart, rangeEnd);
-            if (rangeDates.length > 0) fetchSchedule(rangeDates);
-        }
-    }, [rangeStart, rangeEnd, viewMode]);
-
-    // Scroll today into view in month mode
-    useEffect(() => {
-        if (viewMode === 'month' && todayRef.current) {
-            todayRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }
-    }, [selectedMonth, viewMode]);
-
-    // ── SAVE / CLEAR CELL ─────────────────────────────────────────────────────
-    const saveCell = async (userId, date, code) => {
-        if (code === 'CLEAR') {
-            const existing = schedule[`${userId}_${date}`];
-            if (existing?.id) {
-                await fetch(`/api/schedule/${existing.id}`, { method: 'DELETE' });
-                setSchedule(prev => { const n = { ...prev }; delete n[`${userId}_${date}`]; return n; });
-            }
-            return;
-        }
-        // Optimistic update
-        setSchedule(prev => ({ ...prev, [`${userId}_${date}`]: { user_id: userId, date, code } }));
-        const res = await fetch('/api/schedule', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, date, code }),
-        });
-        if (res.ok) {
-            const entry = await res.json();
-            setSchedule(prev => ({ ...prev, [`${userId}_${date}`]: entry }));
-        }
-    };
-
-    // ── CELL CLICK (click-to-assign mode) ────────────────────────────────────
-    const handleCellClick = useCallback(async (cellId) => {
-        if (!activeCode) return;
-        const [userId, date] = cellId.split('_');
-        await saveCell(Number(userId), date, activeCode);
-    }, [activeCode, saveCell]);
-
-    // ── DRAG HANDLERS ─────────────────────────────────────────────────────────
-    const handleDragStart = ({ active }) => {
-        setActiveDrag(active);
-        if (active.data.current?.type === 'cell') {
-            const entry = schedule[active.id];
-            if (entry?.code) {
-                const [userId, date] = active.id.split('_');
-                setRangeDrag({ empId: Number(userId), startDate: date, dates: [date], code: entry.code });
-            }
-        }
-    };
-
-    const handleDragOver = ({ over }) => {
-        if (!over || !rangeDrag || over.data.current?.type !== 'cell') return;
-        const [ovUserId, ovDate] = over.id.split('_');
-        if (Number(ovUserId) !== rangeDrag.empId) return;
-        const si = dates.indexOf(rangeDrag.startDate);
-        const ei = dates.indexOf(ovDate);
-        if (si === -1 || ei === -1) return;
-        const [lo, hi] = si <= ei ? [si, ei] : [ei, si];
-        setRangeDrag(prev => {
-            if (!prev) return prev;
-            const newDates = dates.slice(lo, hi + 1);
-            if (prev.dates.length === newDates.length && prev.dates[0] === newDates[0]) return prev;
-            return { ...prev, dates: newDates };
-        });
-    };
-
-    const handleDragEnd = async ({ active, over }) => {
-        setActiveDrag(null);
-
-        // Row reorder
-        if (active.data.current?.type !== 'code' && active.data.current?.type !== 'cell') {
-            if (over && active.id !== over.id) {
-                setEmployeeOrder(prev => {
-                    const oi = prev.indexOf(active.id);
-                    const ni = prev.indexOf(over.id);
-                    return arrayMove(prev, oi, ni);
-                });
-            }
-            setRangeDrag(null);
-            return;
-        }
-
-        // Range fill
-        if (rangeDrag?.dates?.length > 0) {
-            for (const date of rangeDrag.dates) await saveCell(rangeDrag.empId, date, rangeDrag.code);
-            setRangeDrag(null);
-            return;
-        }
-
-        // Code chip → cell
-        if (!over) { setRangeDrag(null); return; }
-        const code = active.data.current?.code;
-        if (!code || typeof over.id !== 'string' || !over.id.includes('_')) { setRangeDrag(null); return; }
-        const [userId, date] = over.id.split('_');
-        await saveCell(Number(userId), date, code);
-        setRangeDrag(null);
-    };
-
-    // ── DERIVED ───────────────────────────────────────────────────────────────
-    const uniqueTeams = Array.from(new Set(employees.map(e => e.team_name))).sort();
-
-    const orderedEmployees = employeeOrder
-        .map(id => employees.find(e => String(e.id) === id))
-        .filter(Boolean)
-        .filter(e => filterTeams.length === 0 || filterTeams.includes(e.team_name));
-
-    const grouped = orderedEmployees.reduce((acc, emp) => {
-        if (!acc[emp.team_name]) acc[emp.team_name] = [];
-        acc[emp.team_name].push(emp);
-        return acc;
-    }, {});
-
-    // Grid-level click handler for click-to-assign mode
-    // Uses native DOM event listener which fires BEFORE React/dnd-kit synthetic events
-    useEffect(() => {
-        const grid = gridRef.current;
-        if (!grid) return;
-        const handler = (e) => {
-            if (!activeCode) return;
-            const rect = grid.getBoundingClientRect();
-            const scrollLeft = grid.scrollLeft;
-            const scrollTop  = grid.scrollTop;
-            const x = e.clientX - rect.left + scrollLeft;
-            const y = e.clientY - rect.top  + scrollTop;
-            const HEADER_HEIGHT = 68;
-            if (y < HEADER_HEIGHT) return;
-            if (x < NAME_W) return;
-            const cellIndex = Math.floor((x - NAME_W) / CELL);
-            if (cellIndex < 0 || cellIndex >= dates.length) return;
-            const clickedDate = dates[cellIndex];
-            let runningY = HEADER_HEIGHT;
-            for (const [, emps] of Object.entries(grouped)) {
-                runningY += 28; // team header row height
-                for (const emp of emps) {
-                    if (y >= runningY && y < runningY + CELL) {
-                        handleCellClick(`${emp.id}_${clickedDate}`);
-                        return;
-                    }
-                    runningY += CELL;
+// ── REDUCER ───────────────────────────────────────────────────────────────────
+function scheduleReducer(state, action) {
+    switch (action.type) {
+        case 'SET_CELLS': {
+            const next = { ...state };
+            action.updates.forEach(({ key, code }) => {
+                if (code === null) {
+                    delete next[key];
+                } else {
+                    next[key] = { code };
                 }
+            });
+            return next;
+        }
+        case 'MERGE':
+            return { ...state, ...action.data };
+        default:
+            return state;
+    }
+}
+
+// ── CANVAS GRID ───────────────────────────────────────────────────────────────
+const CanvasGrid = React.memo(({
+                                   dates, grouped, schedule, today,
+                                   activeCode, highlightCode,
+                                   scrollLeft, scrollTop,
+                                   containerWidth, containerHeight,
+                                   onCellAction,
+                               }) => {
+    const canvasRef  = useRef(null);
+    const dpr        = window.devicePixelRatio || 1;
+    const dragRef    = useRef(null);   // { painting: bool, lastKey: string }
+    const hoverRef   = useRef(null);
+    const needsDraw  = useRef(true);
+    const rafRef     = useRef(null);
+
+    // Build flat row list with pre-computed y positions
+    const rows = useMemo(() => {
+        const list = [];
+        let y = HEADER_H;
+        // Pre-compute even/odd index separately from team headers
+        let empIdx = 0;
+        for (const [teamName, emps] of Object.entries(grouped)) {
+            list.push({ type: 'team', teamName, color: emps[0]?.team_color || '#6b7280', y });
+            y += TEAM_HDR_H;
+            for (const emp of emps) {
+                list.push({ type: 'emp', emp, y, even: empIdx % 2 === 0 });
+                y += CELL_H;
+                empIdx++;
             }
-        };
-        grid.addEventListener('click', handler, { capture: true });
-        return () => grid.removeEventListener('click', handler, { capture: true });
-    }, [activeCode, dates, grouped, handleCellClick]);
+        }
+        return list;
+    }, [grouped]);
 
-    const absenceCount = Object.fromEntries(
-        dates.map(date => [
-            date,
-            orderedEmployees.filter(e =>
-                ['V','MV','AV','A'].includes((schedule[`${e.id}_${date}`]?.code || '').toUpperCase())
-            ).length,
-        ])
-    );
+    const totalH = rows.length > 0 ? rows[rows.length - 1].y + CELL_H : HEADER_H;
+    const totalW = NAME_W + dates.length * CELL_W;
 
-    const rangeValid = viewMode === 'range' && rangeStart && rangeEnd && rangeStart <= rangeEnd;
-    const rangeTooBig = viewMode === 'range' && dates.length > 365;
-
-    // ── RANGE DATE HEADER LABEL ───────────────────────────────────────────────
-    const getDateHeaderLabel = (date) => {
-        // In range mode show month label when date is 1st or first date in range
-        if (viewMode === 'range') {
-            const day = parseInt(date.split('-')[2]);
-            const isFirstInRange = date === dates[0];
-            const isFirstOfMonth = day === 1;
-            if (isFirstInRange || isFirstOfMonth) {
-                const [, m] = date.split('-');
-                return MONTHS[parseInt(m) - 1].substring(0, 3);
+    // ── Hit test ──────────────────────────────────────────────────────────────
+    const hitTest = useCallback((clientX, clientY) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left + scrollLeft;
+        const y = clientY - rect.top  + scrollTop;
+        if (x < NAME_W || y < HEADER_H) return null;
+        const dateIdx = Math.floor((x - NAME_W) / CELL_W);
+        if (dateIdx < 0 || dateIdx >= dates.length) return null;
+        const date = dates[dateIdx];
+        for (const row of rows) {
+            if (row.type === 'emp' && y >= row.y && y < row.y + CELL_H) {
+                return { empId: row.emp.id, date, key: `${row.emp.id}_${date}` };
             }
         }
         return null;
-    };
+    }, [scrollLeft, scrollTop, dates, rows]);
 
-    if (loading) return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 400, gap: 2 }}>
-            <CircularProgress sx={{ color: '#e31937' }} />
-            <Typography fontSize="0.85rem" color="#9ca3af">Loading schedule...</Typography>
-        </Box>
-    );
+    // ── Draw ──────────────────────────────────────────────────────────────────
+    const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width / dpr;
+        const H = canvas.height / dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+
+        const sl = scrollLeft;
+        const st = scrollTop;
+
+        // Visible date range with buffer
+        const firstDateIdx = Math.max(0, Math.floor((sl - NAME_W) / CELL_W) - 1);
+        const lastDateIdx  = Math.min(dates.length - 1, Math.ceil((sl + W - NAME_W) / CELL_W) + 1);
+
+        // ── Background ─────────────────────────────────────────────────────
+        ctx.fillStyle = PALETTE.bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // ── Weekend & today column shading ─────────────────────────────────
+        for (let i = firstDateIdx; i <= lastDateIdx; i++) {
+            const date = dates[i];
+            const x = NAME_W + i * CELL_W - sl;
+            if (x + CELL_W < NAME_W || x > W) continue;
+            if (isWeekend(date)) {
+                ctx.fillStyle = PALETTE.weekendBg;
+                ctx.fillRect(x, 0, CELL_W, H);
+            }
+            if (date === today) {
+                ctx.fillStyle = PALETTE.todayBg;
+                ctx.fillRect(x, 0, CELL_W, H);
+            }
+        }
+
+        // ── Employee rows & cells ──────────────────────────────────────────
+        for (const row of rows) {
+            const ry = row.y - st;
+            if (ry + CELL_H < 0 || ry > H) continue;
+
+            if (row.type === 'team') {
+                ctx.fillStyle = PALETTE.teamHdrBg;
+                ctx.fillRect(0, ry, W, TEAM_HDR_H);
+                ctx.strokeStyle = PALETTE.gridLine;
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(0, ry); ctx.lineTo(W, ry); ctx.stroke();
+
+                // Team colour dot
+                ctx.fillStyle = row.color;
+                ctx.beginPath(); ctx.arc(NAME_W - 16, ry + TEAM_HDR_H / 2, 4, 0, Math.PI * 2); ctx.fill();
+
+                ctx.font = '700 11px sans-serif';
+                ctx.fillStyle = PALETTE.text;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(row.teamName, 12, ry + TEAM_HDR_H / 2);
+                continue;
+            }
+
+            // Row stripe
+            ctx.fillStyle = row.even ? PALETTE.bg : '#fafafa';
+            ctx.fillRect(NAME_W, ry, W - NAME_W, CELL_H);
+
+            // Row grid line
+            ctx.strokeStyle = PALETTE.gridLine;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath(); ctx.moveTo(NAME_W, ry + CELL_H); ctx.lineTo(W, ry + CELL_H); ctx.stroke();
+
+            // Code cells
+            for (let i = firstDateIdx; i <= lastDateIdx; i++) {
+                const date = dates[i];
+                const x = NAME_W + i * CELL_W - sl;
+                if (x + CELL_W < NAME_W || x > W) continue;
+
+                // Vertical grid line
+                ctx.strokeStyle = PALETTE.gridLine;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(x, ry); ctx.lineTo(x, ry + CELL_H); ctx.stroke();
+
+                const key  = `${row.emp.id}_${date}`;
+                const entry = schedule[key];
+                const code  = entry?.code?.toUpperCase();
+                const cfg   = code ? CODE_COLORS[code] : null;
+                if (!cfg || code === 'CLEAR') continue;
+
+                const dimmed = highlightCode && code !== highlightCode;
+                ctx.fillStyle = dimmed ? cfg.bg + '44' : cfg.bg;
+                ctx.beginPath();
+                ctx.roundRect(x + 2, ry + 2, CELL_W - 4, CELL_H - 4, 3);
+                ctx.fill();
+
+                ctx.font = '800 9px sans-serif';
+                ctx.fillStyle = dimmed ? cfg.color + '44' : cfg.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(code, x + CELL_W / 2, ry + CELL_H / 2);
+            }
+        }
+
+        // ── Sticky header (dates) ──────────────────────────────────────────
+        ctx.fillStyle = PALETTE.headerBg;
+        ctx.fillRect(0, 0, W, HEADER_H);
+
+        for (let i = firstDateIdx; i <= lastDateIdx; i++) {
+            const date = dates[i];
+            const x = NAME_W + i * CELL_W - sl;
+            if (x + CELL_W < NAME_W || x > W) continue;
+
+            // Hover column highlight in header
+            if (hoverRef.current?.dateIdx === i) {
+                ctx.fillStyle = 'rgba(227,25,55,0.05)';
+                ctx.fillRect(x, 0, CELL_W, HEADER_H);
+            }
+
+            const d   = new Date(date + 'T00:00:00');
+            const day = d.getDate();
+            const dow = ['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()];
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            if (date === today) {
+                ctx.fillStyle = PALETTE.accent;
+                ctx.beginPath();
+                ctx.arc(x + CELL_W / 2, 22, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+            } else {
+                ctx.fillStyle = isWeekend(date) ? PALETTE.textDim : PALETTE.text;
+            }
+
+            ctx.font = '700 10px sans-serif';
+            ctx.fillText(String(day), x + CELL_W / 2, 22);
+
+            ctx.font = '500 8px sans-serif';
+            ctx.fillStyle = isWeekend(date) ? PALETTE.textDim : '#9ca3af';
+            ctx.fillText(dow, x + CELL_W / 2, 36);
+        }
+
+        // Header bottom border
+        ctx.strokeStyle = PALETTE.gridLine;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(NAME_W, HEADER_H); ctx.lineTo(W, HEADER_H); ctx.stroke();
+
+        // ── Sticky name column ─────────────────────────────────────────────
+        ctx.fillStyle = PALETTE.labelBg;
+        ctx.fillRect(0, 0, NAME_W, H);
+
+        for (const row of rows) {
+            const ry = row.y - st;
+            if (ry + CELL_H < 0 || ry > H) continue;
+            if (row.type !== 'emp') continue;
+
+            const isHovered = hoverRef.current?.empId === row.emp.id;
+            if (isHovered) {
+                ctx.fillStyle = 'rgba(227,25,55,0.05)';
+                ctx.fillRect(0, ry, NAME_W, CELL_H);
+            }
+
+            ctx.font = isHovered ? '600 11px sans-serif' : '500 11px sans-serif';
+            ctx.fillStyle = isHovered ? PALETTE.accent : PALETTE.text;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(row.emp.name, 12, ry + CELL_H / 2);
+
+            ctx.strokeStyle = PALETTE.gridLine;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath(); ctx.moveTo(0, ry + CELL_H); ctx.lineTo(NAME_W, ry + CELL_H); ctx.stroke();
+        }
+
+        // Name column right border
+        ctx.strokeStyle = PALETTE.gridLine;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(NAME_W, 0); ctx.lineTo(NAME_W, H); ctx.stroke();
+
+        // ── Corner ────────────────────────────────────────────────────────
+        ctx.fillStyle = PALETTE.labelBg;
+        ctx.fillRect(0, 0, NAME_W, HEADER_H);
+        ctx.font = '600 11px sans-serif';
+        ctx.fillStyle = PALETTE.text;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Employee', 12, HEADER_H / 2);
+        ctx.strokeStyle = PALETTE.gridLine;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(NAME_W, 0); ctx.lineTo(NAME_W, HEADER_H);
+        ctx.moveTo(0, HEADER_H); ctx.lineTo(NAME_W, HEADER_H);
+        ctx.stroke();
+
+    }, [dates, grouped, schedule, today, highlightCode, activeCode, scrollLeft, scrollTop, containerWidth, containerHeight, rows, dpr]);
+
+    // RAF loop
+    useEffect(() => {
+        const loop = () => {
+            if (needsDraw.current) { draw(); needsDraw.current = false; }
+            rafRef.current = requestAnimationFrame(loop);
+        };
+        rafRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafRef.current);
+    }, [draw]);
+
+    // Trigger redraw on any prop change
+    useEffect(() => { needsDraw.current = true; });
+
+    // Resize canvas
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width  = containerWidth  * dpr;
+        canvas.height = containerHeight * dpr;
+        needsDraw.current = true;
+    }, [containerWidth, containerHeight, dpr]);
+
+    // ── Pointer handlers ──────────────────────────────────────────────────────
+    const handlePointerDown = useCallback((e) => {
+        if (e.button !== 0 || !activeCode) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const hit = hitTest(e.clientX, e.clientY);
+        if (!hit) return;
+        dragRef.current = { painting: true, lastKey: null };
+        onCellAction(hit.key, hit.empId, hit.date);
+        dragRef.current.lastKey = hit.key;
+        needsDraw.current = true;
+    }, [hitTest, activeCode, onCellAction]);
+
+    const handlePointerMove = useCallback((e) => {
+        const hit = hitTest(e.clientX, e.clientY);
+
+        // Update hover
+        const prevHover = hoverRef.current;
+        hoverRef.current = hit ? { empId: hit.empId, dateIdx: dates.indexOf(hit.date) } : null;
+        if (JSON.stringify(prevHover) !== JSON.stringify(hoverRef.current)) {
+            needsDraw.current = true;
+        }
+
+        // Paint drag
+        if (dragRef.current?.painting && hit && hit.key !== dragRef.current.lastKey) {
+            onCellAction(hit.key, hit.empId, hit.date);
+            dragRef.current.lastKey = hit.key;
+            needsDraw.current = true;
+        }
+    }, [hitTest, dates, onCellAction]);
+
+    const handlePointerUp = useCallback(() => {
+        dragRef.current = null;
+    }, []);
+
+    const handlePointerLeave = useCallback(() => {
+        hoverRef.current = null;
+        dragRef.current  = null;
+        needsDraw.current = true;
+    }, []);
 
     return (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-            <Box>
-                {/* ── TOOLBAR ── */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.5, flexWrap: 'wrap' }}>
+        <canvas
+            ref={canvasRef}
+            style={{ display: 'block', cursor: activeCode ? 'crosshair' : 'default' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+        />
+    );
+});
 
-                    {/* View mode toggle */}
-                    <ToggleButtonGroup
-                        value={viewMode}
-                        exclusive
-                        onChange={(_, v) => { if (v) setViewMode(v); }}
-                        size="small"
-                        sx={{
-                            border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden',
-                            '& .MuiToggleButton-root': { border: 'none', borderRadius: 0, px: 1.5, py: 0.75, fontSize: '0.8rem', textTransform: 'none', color: '#6b7280', fontWeight: 500 },
-                            '& .MuiToggleButton-root.Mui-selected': { backgroundColor: '#fef2f2', color: '#e31937', fontWeight: 700 },
-                            '& .MuiToggleButton-root:hover': { backgroundColor: '#fef2f2', color: '#e31937' },
+// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
+export default function MatrixView() {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    const [year,         setYear]         = useState(today.getFullYear());
+    const [monthIdx,     setMonthIdx]     = useState(today.getMonth());
+    const [employees,    setEmployees]    = useState([]);
+    const [loading,      setLoading]      = useState(true);
+    const [activeCode,   setActiveCode]   = useState(null);
+    const [highlightCode,setHighlightCode]= useState(null);
+    const [scroll,       setScroll]       = useState({ left: 0, top: 0 });
+    const [containerSize,setContainerSize]= useState({ w: 800, h: 600 });
+    const [fetchedMonths,setFetchedMonths]= useState(new Set());
+
+    const [schedule, dispatchSchedule] = useReducer(scheduleReducer, {});
+
+    const containerRef = useRef(null);
+    const scrollerRef  = useRef(null);
+
+    const dates = useMemo(() => getDatesForMonth(year, monthIdx), [year, monthIdx]);
+
+    // ── Fetch employees once ──────────────────────────────────────────────────
+    useEffect(() => {
+        fetch('/api/matrix-users')
+            .then(r => r.json())
+            .then(d => setEmployees(Array.isArray(d) ? d : []))
+            .catch(() => setEmployees([]))
+            .finally(() => setLoading(false));
+    }, []);
+
+    // ── Fetch schedule for visible month + prefetch next ──────────────────────
+    useEffect(() => {
+        const monthKey  = `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
+        const nextMonth = monthIdx === 11 ? 0 : monthIdx + 1;
+        const nextYear  = monthIdx === 11 ? year + 1 : year;
+        const nextKey   = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`;
+
+        const toFetch = [monthKey, nextKey].filter(k => !fetchedMonths.has(k));
+        if (toFetch.length === 0) return;
+
+        Promise.all(toFetch.map(m =>
+            fetch(`/api/schedule?month=${m}`)
+                .then(r => r.json())
+                .catch(() => [])
+        )).then(results => {
+            const newMap = {};
+            results.flat().forEach(e => { newMap[`${e.user_id}_${e.date}`] = { code: e.code }; });
+            dispatchSchedule({ type: 'MERGE', data: newMap });
+            setFetchedMonths(prev => {
+                const next = new Set(prev);
+                toFetch.forEach(k => next.add(k));
+                return next;
+            });
+        });
+    }, [year, monthIdx, fetchedMonths]);
+
+    // ── Resize observer ───────────────────────────────────────────────────────
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(() => {
+            setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+        });
+        ro.observe(el);
+        setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+        return () => ro.disconnect();
+    }, []);
+
+    // ── Navigation ────────────────────────────────────────────────────────────
+    const goToPrevMonth = () => {
+        if (monthIdx === 0) { setYear(y => y - 1); setMonthIdx(11); }
+        else setMonthIdx(m => m - 1);
+    };
+    const goToNextMonth = () => {
+        if (monthIdx === 11) { setYear(y => y + 1); setMonthIdx(0); }
+        else setMonthIdx(m => m + 1);
+    };
+    const goToToday = () => {
+        setYear(today.getFullYear());
+        setMonthIdx(today.getMonth());
+    };
+
+    // ── Group employees by team ───────────────────────────────────────────────
+    const grouped = useMemo(() => {
+        const g = {};
+        employees.forEach(e => {
+            const key = e.team_name || 'Unassigned';
+            if (!g[key]) g[key] = [];
+            g[key].push(e);
+        });
+        return g;
+    }, [employees]);
+
+    // ── Cell action (toggle or apply) ─────────────────────────────────────────
+    const handleCellAction = useCallback(async (key, empId, date) => {
+        if (!activeCode) return;
+
+        const existing = schedule[key]?.code?.toUpperCase();
+        // Toggle: clicking same code clears it; CLEAR code always clears
+        const newCode = (activeCode === 'CLEAR' || existing === activeCode) ? null : activeCode;
+
+        // Optimistic update
+        dispatchSchedule({ type: 'SET_CELLS', updates: [{ key, code: newCode }] });
+
+        try {
+            if (newCode === null) {
+                // Find the assignment id and delete it
+                const res = await fetch('/api/schedule', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: empId, date, code: 'CLEAR' }),
+                });
+                if (!res.ok) throw new Error('Failed');
+            } else {
+                const res = await fetch('/api/schedule', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: empId, date, code: newCode }),
+                });
+                if (!res.ok) throw new Error('Failed');
+            }
+        } catch {
+            // Rollback on failure
+            dispatchSchedule({ type: 'SET_CELLS', updates: [{ key, code: existing || null }] });
+        }
+    }, [activeCode, schedule]);
+
+    // ── Scroll handler ────────────────────────────────────────────────────────
+    const handleScroll = useCallback((e) => {
+        setScroll({ left: e.target.scrollLeft, top: e.target.scrollTop });
+    }, []);
+
+    // Total canvas dimensions for scroll
+    const totalW = NAME_W + dates.length * CELL_W;
+    const empCount = employees.length;
+    const teamCount = Object.keys(grouped).length;
+    const totalH = HEADER_H + teamCount * TEAM_HDR_H + empCount * CELL_H;
+
+    if (loading) {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#6b7280' }}>
+                Loading schedule…
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.75rem' }}>
+
+            {/* ── Toolbar ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+
+                {/* Month navigation */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <button onClick={goToPrevMonth} style={navBtnStyle}>‹</button>
+                    <span style={{ fontWeight: 700, fontSize: '1rem', color: '#111827', minWidth: 160, textAlign: 'center' }}>
+                        {MONTHS[monthIdx]} {year}
+                    </span>
+                    <button onClick={goToNextMonth} style={navBtnStyle}>›</button>
+                    <button onClick={goToToday} style={{ ...navBtnStyle, marginLeft: '0.25rem', fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
+                        Today
+                    </button>
+                </div>
+
+                <div style={{ width: 1, height: 24, background: '#e5e7eb' }} />
+
+                {/* Code palette */}
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {Object.entries(CODE_COLORS).map(([code, cfg]) => {
+                        const isActive = activeCode === code;
+                        return (
+                            <button
+                                key={code}
+                                title={cfg.label}
+                                onClick={() => {
+                                    setActiveCode(prev => prev === code ? null : code);
+                                    setHighlightCode(null);
+                                }}
+                                style={{
+                                    padding: '0.25rem 0.6rem',
+                                    borderRadius: 20,
+                                    border: `2px solid ${isActive ? cfg.color : 'transparent'}`,
+                                    background: isActive ? cfg.bg : '#f3f4f6',
+                                    color: isActive ? cfg.color : '#6b7280',
+                                    fontWeight: isActive ? 800 : 500,
+                                    fontSize: '0.75rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.12s',
+                                    boxShadow: isActive ? `0 0 0 1px ${cfg.color}33` : 'none',
+                                }}
+                            >
+                                {isActive ? '✓ ' : ''}{code}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {activeCode && (
+                    <span style={{ fontSize: '0.75rem', color: '#6b7280', marginLeft: 'auto' }}>
+                        <strong style={{ color: CODE_COLORS[activeCode]?.color }}>{activeCode}</strong>
+                        {' '}active — click or drag cells to apply · click again to deselect
+                    </span>
+                )}
+            </div>
+
+            {/* ── Legend / highlight filter ── */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.7rem', color: '#9ca3af', marginRight: '0.25rem' }}>Highlight:</span>
+                {Object.entries(CODE_COLORS).filter(([c]) => c !== 'CLEAR').map(([code, cfg]) => (
+                    <button
+                        key={code}
+                        title={`Highlight ${cfg.label}`}
+                        onClick={() => setHighlightCode(prev => prev === code ? null : code)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            padding: '2px 8px', borderRadius: 4,
+                            border: `1px solid ${highlightCode === code ? cfg.color : '#e5e7eb'}`,
+                            background: highlightCode === code ? cfg.bg : 'transparent',
+                            color: highlightCode === code ? cfg.color : '#9ca3af',
+                            fontSize: '0.7rem', cursor: 'pointer',
                         }}
                     >
-                        <ToggleButton value="month">
-                            <MonthIcon sx={{ fontSize: '0.9rem', mr: 0.5 }} /> Month
-                        </ToggleButton>
-                        <ToggleButton value="range">
-                            <DateRangeIcon sx={{ fontSize: '0.9rem', mr: 0.5 }} /> Date Range
-                        </ToggleButton>
-                    </ToggleButtonGroup>
-
-                    {/* Month navigator — only in month mode */}
-                    {viewMode === 'month' && (
-                        <>
-                            <Box sx={{ display: 'flex', alignItems: 'center', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                                <IconButton size="small" onClick={() => setSelectedMonth(m => Math.max(0, m - 1))}
-                                            disabled={selectedMonth === 0}
-                                            sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
-                                    <PrevIcon fontSize="small" />
-                                </IconButton>
-                                <Box sx={{ px: 2.5, py: 0.75, minWidth: 140, textAlign: 'center', borderLeft: '1px solid #f3f4f6', borderRight: '1px solid #f3f4f6' }}>
-                                    <Typography fontWeight={700} fontSize="0.9rem" color="#111827">{MONTHS[selectedMonth]}</Typography>
-                                    <Typography fontSize="0.68rem" color="#9ca3af" fontWeight={500}>2026</Typography>
-                                </Box>
-                                <IconButton size="small" onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
-                                            disabled={selectedMonth === 11}
-                                            sx={{ borderRadius: 0, px: 1, '&:hover': { backgroundColor: '#fef2f2', color: '#e31937' } }}>
-                                    <NextIcon fontSize="small" />
-                                </IconButton>
-                            </Box>
-
-                            <Box onClick={() => setSelectedMonth(new Date().getMonth())}
-                                 sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'pointer', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75, color: '#e31937', fontWeight: 600, fontSize: '0.82rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', '&:hover': { backgroundColor: '#fef2f2', borderColor: '#e31937' }, transition: 'all 0.12s' }}>
-                                <TodayIcon sx={{ fontSize: '1rem' }} />
-                                <Typography fontSize="0.82rem" fontWeight={600}>Today</Typography>
-                            </Box>
-                        </>
-                    )}
-
-                    {/* Date range pickers — only in range mode */}
-                    {viewMode === 'range' && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75 }}>
-                            <TextField
-                                label="Start Date"
-                                type="date"
-                                size="small"
-                                value={rangeStart}
-                                onChange={e => setRangeStart(e.target.value)}
-                                InputLabelProps={{ shrink: true }}
-                                sx={{
-                                    width: 160,
-                                    '& .MuiOutlinedInput-root': { borderRadius: '6px', '&.Mui-focused fieldset': { borderColor: '#e31937' } },
-                                    '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' },
-                                }}
-                            />
-                            <Typography fontSize="0.85rem" color="#9ca3af" fontWeight={500}>to</Typography>
-                            <TextField
-                                label="End Date"
-                                type="date"
-                                size="small"
-                                value={rangeEnd}
-                                onChange={e => setRangeEnd(e.target.value)}
-                                InputLabelProps={{ shrink: true }}
-                                inputProps={{ min: rangeStart }}
-                                sx={{
-                                    width: 160,
-                                    '& .MuiOutlinedInput-root': { borderRadius: '6px', '&.Mui-focused fieldset': { borderColor: '#e31937' } },
-                                    '& .MuiInputLabel-root.Mui-focused': { color: '#e31937' },
-                                }}
-                            />
-                            {rangeValid && (
-                                <Typography fontSize="0.75rem" color="#6b7280" sx={{ whiteSpace: 'nowrap' }}>
-                                    {dates.length} day{dates.length !== 1 ? 's' : ''}
-                                </Typography>
-                            )}
-                            {scheduleLoading && <CircularProgress size={16} sx={{ color: '#e31937' }} />}
-                        </Box>
-                    )}
-
-                    {/* Multi-select team filter */}
-                    <Box ref={dropdownRef} sx={{ position: 'relative' }}>
-                        <Box
-                            onClick={() => setTeamDropdownOpen(o => !o)}
-                            sx={{
-                                display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5,
-                                minWidth: 200, maxWidth: 340, minHeight: 38,
-                                border: teamDropdownOpen ? '1px solid #e31937' : '1px solid #e5e7eb',
-                                borderRadius: '8px', px: 1.25, py: 0.5, cursor: 'pointer',
-                                backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                                transition: 'border 0.12s',
-                            }}
-                        >
-                            {filterTeams.length === 0 ? (
-                                <Typography fontSize="0.85rem" color="#9ca3af">Filter by Team...</Typography>
-                            ) : (
-                                filterTeams.map(t => (
-                                    <Chip
-                                        key={t}
-                                        label={t}
-                                        size="small"
-                                        onDelete={(e) => { e.stopPropagation(); setFilterTeams(prev => prev.filter(x => x !== t)); }}
-                                        sx={{ height: 20, fontSize: '0.68rem', backgroundColor: '#fef2f2', color: '#e31937', fontWeight: 700, '& .MuiChip-deleteIcon': { fontSize: '0.75rem', color: '#e31937' } }}
-                                    />
-                                ))
-                            )}
-                            <Typography fontSize="0.75rem" color="#9ca3af" sx={{ ml: 'auto', flexShrink: 0 }}>▾</Typography>
-                        </Box>
-
-                        {/* Dropdown panel */}
-                        {teamDropdownOpen && (
-                            <Box sx={{
-                                position: 'absolute', top: '100%', left: 0, mt: 0.5,
-                                minWidth: 260, maxHeight: 280, overflowY: 'auto',
-                                backgroundColor: '#fff', borderRadius: '8px',
-                                border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                                zIndex: 100, py: 0.5,
-                            }}>
-                                {/* Clear all */}
-                                <Box
-                                    onClick={() => setFilterTeams([])}
-                                    sx={{ px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', '&:hover': { backgroundColor: '#f9fafb' }, borderBottom: '1px solid #f3f4f6' }}
-                                >
-                                    <Typography fontSize="0.8rem" color="#6b7280">All Teams</Typography>
-                                    {filterTeams.length === 0 && <Typography fontSize="0.7rem" color="#e31937" fontWeight={700}>✓ Active</Typography>}
-                                    {filterTeams.length > 0 && <Typography fontSize="0.7rem" color="#9ca3af" sx={{ cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setFilterTeams([]); }}>Clear all</Typography>}
-                                </Box>
-
-                                {/* Team options */}
-                                {uniqueTeams.map(team => {
-                                    const selected = filterTeams.includes(team);
-                                    return (
-                                        <Box
-                                            key={team}
-                                            onClick={() => setFilterTeams(prev => selected ? prev.filter(t => t !== team) : [...prev, team])}
-                                            sx={{
-                                                px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 1,
-                                                cursor: 'pointer', backgroundColor: selected ? '#fef2f2' : 'transparent',
-                                                '&:hover': { backgroundColor: selected ? '#fef2f2' : '#f9fafb' },
-                                            }}
-                                        >
-                                            <Box sx={{
-                                                width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
-                                                border: `2px solid ${selected ? '#e31937' : '#d1d5db'}`,
-                                                backgroundColor: selected ? '#e31937' : 'transparent',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            }}>
-                                                {selected && <Typography fontSize="0.55rem" color="#fff" fontWeight={800} lineHeight={1}>✓</Typography>}
-                                            </Box>
-                                            <Typography fontSize="0.82rem" color={selected ? '#e31937' : '#374151'} fontWeight={selected ? 600 : 400} noWrap>{team}</Typography>
-                                        </Box>
-                                    );
-                                })}
-                            </Box>
-                        )}
-                    </Box>
-
-                    {/* Code palette */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 'auto', flexWrap: 'wrap', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75 }}>
-                        <Typography fontSize="0.65rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.06em" sx={{ mr: 0.5 }}>Drag to assign:</Typography>
-                        {Object.entries(CODE_COLORS).map(([code, cfg]) => (
-                            <DraggableCode
-                                key={code} code={code} cfg={cfg}
-                                highlightCode={highlightCode}
-                                activeCode={activeCode}
-                                onCodeClick={(c) => setActiveCode(prev => prev === c ? null : c)}
-                            />
-                        ))}
-                    </Box>
-                </Box>
-
-                {/* Active code banner */}
-                {activeCode && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, px: 2, py: 1, backgroundColor: CODE_COLORS[activeCode]?.bg, border: `2px solid ${CODE_COLORS[activeCode]?.color}`, borderRadius: '8px' }}>
-                        <Box sx={{ width: 22, height: 22, borderRadius: '4px', backgroundColor: CODE_COLORS[activeCode]?.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography fontSize="0.65rem" fontWeight={800} color="#fff">{activeCode}</Typography>
-                        </Box>
-                        <Typography fontSize="0.85rem" fontWeight={600} color={CODE_COLORS[activeCode]?.color}>
-                            {activeCode === 'CLEAR' ? 'Click any cell to clear it' : `Click any cell to assign "${CODE_COLORS[activeCode]?.label}"`}
-                        </Typography>
-                        <Typography fontSize="0.78rem" color="#9ca3af" sx={{ ml: 'auto' }}>Press Esc or click the chip again to cancel</Typography>
-                        <Box onClick={() => setActiveCode(null)} sx={{ cursor: 'pointer', color: CODE_COLORS[activeCode]?.color, fontWeight: 700, fontSize: '1rem', lineHeight: 1, px: 0.5, '&:hover': { opacity: 0.7 } }}>✕</Box>
-                    </Box>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: cfg.bg, border: `1px solid ${cfg.color}66`, display: 'inline-block' }} />
+                        {cfg.label}
+                    </button>
+                ))}
+                {highlightCode && (
+                    <button onClick={() => setHighlightCode(null)} style={{ fontSize: '0.7rem', color: '#e31937', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+                        ✕ Clear
+                    </button>
                 )}
+            </div>
 
-                {/* Range mode — empty state */}
-                {viewMode === 'range' && !rangeValid && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, border: '2px dashed #e5e7eb', borderRadius: '12px', flexDirection: 'column', gap: 1 }}>
-                        <DateRangeIcon sx={{ fontSize: '2.5rem', color: '#d1d5db' }} />
-                        <Typography fontSize="0.9rem" color="#9ca3af" fontWeight={500}>Select a start and end date to view the schedule</Typography>
-                    </Box>
-                )}
+            {/* ── Scrollable canvas container ── */}
+            <div
+                ref={scrollerRef}
+                onScroll={handleScroll}
+                style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 8,
+                    position: 'relative',
+                }}
+            >
+                {/* Scroll spacer so the browser scrollbars reflect full dimensions */}
+                <div style={{ width: totalW, height: totalH, position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }} />
 
-                {/* Range too large warning */}
-                {rangeTooBig && (
-                    <Box sx={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', px: 2, py: 1, mb: 2 }}>
-                        <Typography fontSize="0.85rem" color="#92400e" fontWeight={600}>⚠ Range is too large. Please select a range of 365 days or fewer.</Typography>
-                    </Box>
-                )}
+                {/* Sticky canvas wrapper */}
+                <div
+                    ref={containerRef}
+                    style={{
+                        position: 'sticky',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <CanvasGrid
+                        dates={dates}
+                        grouped={grouped}
+                        schedule={schedule}
+                        today={todayStr}
+                        activeCode={activeCode}
+                        highlightCode={highlightCode}
+                        scrollLeft={scroll.left}
+                        scrollTop={scroll.top}
+                        containerWidth={containerSize.w}
+                        containerHeight={containerSize.h}
+                        onCellAction={handleCellAction}
+                    />
+                </div>
+            </div>
 
-                {/* Matrix grid — show when dates are available */}
-                {dates.length > 0 && !rangeTooBig && (
-                    <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                        <Box ref={gridRef} sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', cursor: activeCode ? 'crosshair' : 'default' }}>
-                            <Box sx={{ minWidth: NAME_W + dates.length * CELL }}>
-
-                                {/* DATE HEADER */}
-                                <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff', borderBottom: '2px solid #e5e7eb' }}>
-                                    <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 20, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', display: 'flex', alignItems: 'center', px: 2, height: 44 }}>
-                                        <Typography fontSize="0.68rem" fontWeight={700} color="#6b7280" textTransform="uppercase" letterSpacing="0.06em">Employee</Typography>
-                                    </Box>
-                                    {dates.map(date => {
-                                        const isToday  = date === today;
-                                        const weekend  = isWeekend(date);
-                                        const dow      = getDayOfWeek(date);
-                                        const monthLabel = getDateHeaderLabel(date);
-                                        return (
-                                            <Box key={date} ref={isToday ? todayRef : null} sx={{
-                                                width: CELL, minWidth: CELL, flexShrink: 0,
-                                                textAlign: 'center', height: 44,
-                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                                backgroundColor: isToday ? '#fef2f2' : weekend ? '#f9fafb' : '#fff',
-                                                borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6',
-                                                borderRight: isToday ? '2px solid #e31937' : 'none',
-                                                position: 'relative',
-                                            }}>
-                                                {/* Month label in range mode */}
-                                                {monthLabel && viewMode === 'range' && (
-                                                    <Typography fontSize="0.5rem" lineHeight={1} color="#e31937" fontWeight={700} textTransform="uppercase" sx={{ position: 'absolute', top: 2 }}>
-                                                        {monthLabel}
-                                                    </Typography>
-                                                )}
-                                                <Typography fontSize="0.55rem" lineHeight={1} color={isToday ? '#e31937' : '#c4c4c4'} fontWeight={isToday ? 800 : 400} textTransform="uppercase" mt={monthLabel && viewMode === 'range' ? 0.75 : 0}>
-                                                    {DAY_ABBREVS[dow]}
-                                                </Typography>
-                                                <Typography fontSize="0.72rem" fontWeight={isToday ? 800 : weekend ? 400 : 600} color={isToday ? '#e31937' : weekend ? '#c4c4c4' : '#374151'} lineHeight={1.4}>
-                                                    {parseInt(date.split('-')[2])}
-                                                </Typography>
-                                            </Box>
-                                        );
-                                    })}
-                                </Box>
-
-                                {/* OUT OF OFFICE ROW */}
-                                <Box sx={{ display: 'flex', backgroundColor: '#fafafa', borderBottom: '2px solid #e5e7eb' }}>
-                                    <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#fafafa', borderRight: '2px solid #e5e7eb', px: 2, display: 'flex', alignItems: 'center', height: 24 }}>
-                                        <Typography fontSize="0.62rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.05em">Out of Office</Typography>
-                                    </Box>
-                                    {dates.map(date => {
-                                        const count   = absenceCount[date] || 0;
-                                        const isToday = date === today;
-                                        return (
-                                            <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: isToday ? '#fef2f2' : isWeekend(date) ? '#f9fafb' : 'transparent', borderLeft: isToday ? '2px solid #e31937' : '1px solid #f3f4f6' }}>
-                                                {count > 0 && (
-                                                    <Box sx={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: count >= 5 ? '#fee2e2' : count >= 3 ? '#fef3c7' : '#f3f4f6', color: count >= 5 ? '#991b1b' : count >= 3 ? '#92400e' : '#6b7280' }}>
-                                                        <Typography fontSize="0.55rem" fontWeight={700} lineHeight={1}>{count}</Typography>
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        );
-                                    })}
-                                </Box>
-
-                                {/* EMPLOYEE ROWS */}
-                                {Object.entries(grouped).map(([teamName, emps]) => {
-                                    const teamColor = emps[0]?.team_color || '#6b7280';
-                                    return (
-                                        <React.Fragment key={teamName}>
-                                            <Box sx={{ display: 'flex', backgroundColor: '#f9fafb', borderBottom: '1px solid #e8e8e8', borderTop: '2px solid #e5e7eb' }}>
-                                                <Box sx={{ width: NAME_W, minWidth: NAME_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#f9fafb', borderRight: '2px solid #e5e7eb', px: 2, py: 0.6, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: teamColor }} />
-                                                    <Typography fontSize="0.7rem" fontWeight={700} color="#374151" noWrap letterSpacing="0.01em">{teamName}</Typography>
-                                                    <Chip label={emps.length} size="small" sx={{ height: 15, fontSize: '0.58rem', ml: 'auto', backgroundColor: teamColor + '18', color: teamColor, fontWeight: 700 }} />
-                                                </Box>
-                                                {dates.map(date => (
-                                                    <Box key={date} sx={{ width: CELL, minWidth: CELL, flexShrink: 0, backgroundColor: date === today ? '#fef2f2' : isWeekend(date) ? '#f3f4f6' : '#f9fafb', borderLeft: date === today ? '2px solid #e31937' : '1px solid #ececec' }} />
-                                                ))}
-                                            </Box>
-
-                                            <SortableContext items={emps.map(e => String(e.id))} strategy={verticalListSortingStrategy}>
-                                                {emps.map((emp, idx) => (
-                                                    <SortableRow
-                                                        key={emp.id} emp={emp}
-                                                        dates={dates} schedule={schedule}
-                                                        today={today} highlightCode={highlightCode}
-                                                        teamColor={teamColor} empIdx={idx}
-                                                        rangeDrag={rangeDrag}
-                                                    />
-                                                ))}
-                                            </SortableContext>
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </Box>
-                        </Box>
-                    </Paper>
-                )}
-
-                {/* LEGEND */}
-                <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', px: 2, py: 1 }}>
-                    <Typography fontSize="0.65rem" fontWeight={700} color="#9ca3af" textTransform="uppercase" letterSpacing="0.06em">Legend:</Typography>
-                    {Object.entries(CODE_COLORS).filter(([c]) => c !== 'CLEAR').map(([code, cfg]) => (
-                        <Box key={code} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, cursor: 'pointer' }}
-                             onClick={() => setHighlightCode(h => h === code ? null : code)}>
-                            <Box sx={{ width: 18, height: 18, borderRadius: '3px', backgroundColor: highlightCode === code ? cfg.color : cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${highlightCode === code ? cfg.color : cfg.color + '33'}`, transition: 'all 0.12s' }}>
-                                <Typography fontSize="0.55rem" fontWeight={800} color={highlightCode === code ? '#fff' : cfg.color} lineHeight={1}>{code}</Typography>
-                            </Box>
-                            <Typography fontSize="0.72rem" color={highlightCode === code ? '#374151' : '#9ca3af'} fontWeight={highlightCode === code ? 600 : 400}>{cfg.label}</Typography>
-                        </Box>
-                    ))}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
-                        <Box sx={{ width: 18, height: 18, borderRadius: '3px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb' }} />
-                        <Typography fontSize="0.72rem" color="#9ca3af">Weekend</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
-                        <Box sx={{ width: 18, height: 18, borderRadius: '3px', backgroundColor: '#fef2f2', border: '2px solid #e31937' }} />
-                        <Typography fontSize="0.72rem" color="#9ca3af">Today</Typography>
-                    </Box>
-                </Box>
-            </Box>
-
-            {/* DRAG OVERLAY */}
-            <DragOverlay dropAnimation={{ duration: 120, easing: 'ease' }}>
-                {activeDrag?.data?.current?.type === 'code' && (() => {
-                    const cfg = CODE_COLORS[activeDrag.data.current.code];
-                    return (
-                        <Chip label={activeDrag.data.current.code} size="small" sx={{ backgroundColor: cfg?.color, color: '#fff', fontWeight: 800, fontSize: '0.7rem', cursor: 'grabbing', boxShadow: `0 6px 16px ${cfg?.color}55`, transform: 'scale(1.1)' }} />
-                    );
-                })()}
-            </DragOverlay>
-        </DndContext>
+            {/* ── Footer stats ── */}
+            <div style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'flex', gap: '1rem' }}>
+                <span>{employees.length} employees</span>
+                <span>{Object.keys(grouped).length} teams</span>
+                <span>{dates.length} days</span>
+                <span>{Object.keys(schedule).length} schedule entries</span>
+            </div>
+        </div>
     );
 }
+
+// ── Shared styles ─────────────────────────────────────────────────────────────
+const navBtnStyle = {
+    background: '#f3f4f6',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    padding: '0.3rem 0.75rem',
+    fontSize: '1rem',
+    cursor: 'pointer',
+    color: '#374151',
+    fontWeight: 600,
+    lineHeight: 1,
+};
