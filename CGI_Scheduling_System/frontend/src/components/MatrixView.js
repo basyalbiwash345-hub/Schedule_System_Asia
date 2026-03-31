@@ -36,11 +36,15 @@ const NAME_W     = 200;
 const HEADER_H   = 48;
 const TEAM_HDR_H = 26;
 
+const SCROLLBAR_H = 12;  // height of horizontal scrollbar
+const SCROLLBAR_W = 12;  // width of vertical scrollbar
+
 const PALETTE = {
     bg:'#ffffff', headerBg:'#f9fafb', labelBg:'#f9fafb',
     gridLine:'#e5e7eb', weekendBg:'#f9fafb', todayBg:'#fff7f7',
     teamHdrBg:'#f3f4f6', text:'#374151', textDim:'#9ca3af',
     accent:'#e31937',
+    scrollTrack:'#f3f4f6', scrollThumb:'#d1d5db', scrollThumbHover:'#9ca3af',
 };
 
 // ── DATE HELPERS ───────────────────────────────────────────────────────────────
@@ -254,17 +258,20 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
 // Parent only needs to supply data + callbacks.
 const CanvasGrid = React.memo(({
                                    dates, grouped, schedule, activeCode, highlightCode,
+                                   conflictKeys,
                                    onCellAction, onCellDoubleClick,
                                }) => {
-    const wrapperRef = useRef(null);   // outer div — we measure THIS
-    const canvasRef  = useRef(null);
-    const dpr        = window.devicePixelRatio || 1;
-    const dragRef    = useRef(null);
-    const hoverRef   = useRef(null);
-    const needsDraw  = useRef(true);
-    const rafRef     = useRef(null);
-    const scrollRef  = useRef({ left:0, top:0 });
-    const sizeRef    = useRef({ w:0, h:0 });
+    const wrapperRef    = useRef(null);   // outer div — we measure THIS
+    const canvasRef     = useRef(null);
+    const dpr           = window.devicePixelRatio || 1;
+    const dragRef       = useRef(null);
+    const hoverRef      = useRef(null);
+    const needsDraw     = useRef(true);
+    const rafRef        = useRef(null);
+    const scrollRef     = useRef({ left:0, top:0 });
+    const sizeRef       = useRef({ w:0, h:0 });
+    const scrollDragRef = useRef(null); // { axis:'h'|'v', startX, startY, startLeft, startTop }
+    const [tooltip, setTooltip] = useState(null); // { x, y, empName, date, code, label }
 
     // Stable pre-computed row list — even/odd computed once, not per-render
     const rows = useMemo(() => {
@@ -367,6 +374,18 @@ const CanvasGrid = React.memo(({
                 ctx.fillStyle=dim?cfg.color+'44':cfg.color;
                 ctx.textAlign='center'; ctx.textBaseline='middle';
                 ctx.fillText(code, x+CELL_W/2, ry+CELL_H/2);
+
+                // Conflict indicator — red corner triangle
+                const cellKey = `${row.emp.id}_${date}`;
+                if (conflictKeys?.has(cellKey)) {
+                    ctx.fillStyle='#e31937';
+                    ctx.beginPath();
+                    ctx.moveTo(x+CELL_W-2, ry+2);
+                    ctx.lineTo(x+CELL_W-2, ry+8);
+                    ctx.lineTo(x+CELL_W-8, ry+2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
             }
         }
 
@@ -440,7 +459,63 @@ const CanvasGrid = React.memo(({
         ctx.moveTo(NAME_W,0); ctx.lineTo(NAME_W,HEADER_H);
         ctx.moveTo(0,HEADER_H); ctx.lineTo(NAME_W,HEADER_H);
         ctx.stroke();
-    }, [dates, grouped, schedule, highlightCode, rows, dpr]);
+
+        // ── Scrollbars ────────────────────────────────────────────────────────
+        const empCount  = Object.values(grouped).flat().length;
+        const teamCount = Object.keys(grouped).length;
+        const totalH = HEADER_H + teamCount * TEAM_HDR_H + empCount * CELL_H;
+        const totalW = NAME_W + dates.length * CELL_W;
+
+        // Horizontal scrollbar
+        if (totalW > W) {
+            const trackX = NAME_W;
+            const trackY = H - SCROLLBAR_H;
+            const trackW = W - NAME_W - SCROLLBAR_W;
+
+            // Track
+            ctx.fillStyle = PALETTE.scrollTrack;
+            ctx.fillRect(trackX, trackY, trackW, SCROLLBAR_H);
+
+            // Thumb
+            const thumbRatio = Math.min(1, (W - NAME_W) / totalW);
+            const thumbW     = Math.max(32, trackW * thumbRatio);
+            const maxScroll  = Math.max(1, totalW - W);
+            const thumbX     = trackX + (scrollRef.current.left / maxScroll) * (trackW - thumbW);
+            ctx.fillStyle = PALETTE.scrollThumb;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(thumbX + 2, trackY + 2, thumbW - 4, SCROLLBAR_H - 4, 3);
+            else ctx.rect(thumbX + 2, trackY + 2, thumbW - 4, SCROLLBAR_H - 4);
+            ctx.fill();
+        }
+
+        // Vertical scrollbar
+        if (totalH > H) {
+            const trackX = W - SCROLLBAR_W;
+            const trackY = HEADER_H;
+            const trackH = H - HEADER_H - SCROLLBAR_H;
+
+            // Track
+            ctx.fillStyle = PALETTE.scrollTrack;
+            ctx.fillRect(trackX, trackY, SCROLLBAR_W, trackH);
+
+            // Thumb
+            const thumbRatio = Math.min(1, (H - HEADER_H) / totalH);
+            const thumbH     = Math.max(32, trackH * thumbRatio);
+            const maxScroll  = Math.max(1, totalH - H);
+            const thumbY     = trackY + (scrollRef.current.top / maxScroll) * (trackH - thumbH);
+            ctx.fillStyle = PALETTE.scrollThumb;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(trackX + 2, thumbY + 2, SCROLLBAR_W - 4, thumbH - 4, 3);
+            else ctx.rect(trackX + 2, thumbY + 2, SCROLLBAR_W - 4, thumbH - 4);
+            ctx.fill();
+        }
+
+        // Corner square where both scrollbars meet
+        if (totalW > W && totalH > H) {
+            ctx.fillStyle = PALETTE.scrollTrack;
+            ctx.fillRect(W - SCROLLBAR_W, H - SCROLLBAR_H, SCROLLBAR_W, SCROLLBAR_H);
+        }
+    }, [dates, grouped, schedule, highlightCode, conflictKeys, rows, dpr]);
 
     // RAF draw loop
     useEffect(() => {
@@ -491,28 +566,125 @@ const CanvasGrid = React.memo(({
         needsDraw.current = true;
     }, [grouped, dates]);
 
+    // Test whether a pointer event lands on a scrollbar thumb
+    const scrollbarHitTest = useCallback((clientX, clientY) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        const cx = clientX - rect.left;
+        const cy = clientY - rect.top;
+        const { w, h } = sizeRef.current;
+        const empCount  = Object.values(grouped).flat().length;
+        const teamCount = Object.keys(grouped).length;
+        const totalH = HEADER_H + teamCount * TEAM_HDR_H + empCount * CELL_H;
+        const totalW = NAME_W + dates.length * CELL_W;
+
+        // Horizontal scrollbar zone
+        if (totalW > w && cy >= h - SCROLLBAR_H && cy <= h && cx >= NAME_W && cx <= w - SCROLLBAR_W) {
+            return { axis: 'h', totalW, totalH };
+        }
+        // Vertical scrollbar zone
+        if (totalH > h && cx >= w - SCROLLBAR_W && cx <= w && cy >= HEADER_H && cy <= h - SCROLLBAR_H) {
+            return { axis: 'v', totalW, totalH };
+        }
+        return null;
+    }, [grouped, dates]);
+
     const handlePointerDown=useCallback((e)=>{
         if(e.button!==0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
+
+        // Check scrollbar first
+        const sbHit = scrollbarHitTest(e.clientX, e.clientY);
+        if (sbHit) {
+            scrollDragRef.current = {
+                axis: sbHit.axis,
+                startX: e.clientX,
+                startY: e.clientY,
+                startLeft: scrollRef.current.left,
+                startTop:  scrollRef.current.top,
+                totalW: sbHit.totalW,
+                totalH: sbHit.totalH,
+            };
+            return;
+        }
+
         const hit=hitTest(e.clientX,e.clientY); if(!hit) return;
         if(activeCode){ dragRef.current={painting:true,lastKey:null}; onCellAction(hit.key,hit.empId,hit.date,hit.empName); dragRef.current.lastKey=hit.key; needsDraw.current=true; }
-    },[hitTest,activeCode,onCellAction]);
+    },[hitTest,scrollbarHitTest,activeCode,onCellAction]);
 
     const handlePointerMove=useCallback((e)=>{
+        // Handle scrollbar thumb dragging
+        const sd = scrollDragRef.current;
+        if (sd) {
+            const { w, h } = sizeRef.current;
+            if (sd.axis === 'h') {
+                const trackW    = w - NAME_W - SCROLLBAR_W;
+                const thumbRatio = Math.min(1, (w - NAME_W) / sd.totalW);
+                const thumbW    = Math.max(32, trackW * thumbRatio);
+                const scrollRange = trackW - thumbW;
+                const maxLeft   = Math.max(0, sd.totalW - w);
+                const dx        = e.clientX - sd.startX;
+                const newLeft   = sd.startLeft + (dx / Math.max(1, scrollRange)) * maxLeft;
+                scrollRef.current = { ...scrollRef.current, left: Math.max(0, Math.min(maxLeft, newLeft)) };
+            } else {
+                const trackH    = h - HEADER_H - SCROLLBAR_H;
+                const thumbRatio = Math.min(1, (h - HEADER_H) / sd.totalH);
+                const thumbH    = Math.max(32, trackH * thumbRatio);
+                const scrollRange = trackH - thumbH;
+                const maxTop    = Math.max(0, sd.totalH - h);
+                const dy        = e.clientY - sd.startY;
+                const newTop    = sd.startTop + (dy / Math.max(1, scrollRange)) * maxTop;
+                scrollRef.current = { ...scrollRef.current, top: Math.max(0, Math.min(maxTop, newTop)) };
+            }
+            needsDraw.current = true;
+            return;
+        }
+
         const hit=hitTest(e.clientX,e.clientY);
         const prev=hoverRef.current; hoverRef.current=hit||null;
         if(JSON.stringify(prev)!==JSON.stringify(hoverRef.current)) needsDraw.current=true;
+
+        // Update floating tooltip
+        if (hit) {
+            const entry = schedule[hit.key];
+            const code  = entry?.code?.toUpperCase();
+            const cfg   = code ? CODE_COLORS[code] : null;
+            const rect  = wrapperRef.current?.getBoundingClientRect();
+            setTooltip({
+                x: e.clientX - (rect?.left || 0) + 12,
+                y: e.clientY - (rect?.top  || 0) + 12,
+                empName: hit.empName,
+                date: hit.date,
+                code: code || null,
+                label: cfg?.label || null,
+                bg: cfg?.bg || null,
+                color: cfg?.color || null,
+            });
+        } else {
+            setTooltip(null);
+        }
+
         if(dragRef.current?.painting&&hit&&hit.key!==dragRef.current.lastKey&&activeCode){
             onCellAction(hit.key,hit.empId,hit.date,hit.empName);
             dragRef.current.lastKey=hit.key; needsDraw.current=true;
         }
-    },[hitTest,activeCode,onCellAction]);
+    },[hitTest,activeCode,onCellAction,schedule]);
 
-    const handlePointerUp=useCallback(()=>{ dragRef.current=null; },[]);
-    const handlePointerLeave=useCallback(()=>{ hoverRef.current=null; dragRef.current=null; needsDraw.current=true; },[]);
+    const handlePointerUp=useCallback(()=>{ dragRef.current=null; scrollDragRef.current=null; },[]);
+    const handlePointerLeave=useCallback(()=>{ hoverRef.current=null; dragRef.current=null; scrollDragRef.current=null; needsDraw.current=true; setTooltip(null); },[]);
     const handleDoubleClick=useCallback((e)=>{
         const hit=hitTest(e.clientX,e.clientY); if(hit) onCellDoubleClick(hit.key,hit.empId,hit.date,hit.empName);
     },[hitTest,onCellDoubleClick]);
+
+    // Detect empty state: no schedule entries for any visible date
+    const hasEntries = useMemo(() => {
+        return dates.some(date =>
+            Object.values(grouped).flat().some(emp =>
+                schedule[`${emp.id}_${date}`]
+            )
+        );
+    }, [dates, grouped, schedule]);
 
     return (
         <div
@@ -529,6 +701,64 @@ const CanvasGrid = React.memo(({
                 onPointerLeave={handlePointerLeave}
                 onDoubleClick={handleDoubleClick}
             />
+
+            {/* ── Empty state overlay ── */}
+            {!hasEntries && Object.keys(grouped).length > 0 && (
+                <div style={{
+                    position:'absolute', top:HEADER_H, left:NAME_W, right:0, bottom:0,
+                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                    pointerEvents:'none', gap:'0.5rem',
+                }}>
+                    <div style={{ fontSize:'1.5rem' }}>📅</div>
+                    <div style={{ fontSize:'0.9rem', fontWeight:700, color:'#374151' }}>
+                        No schedules found for the selected period.
+                    </div>
+                    <div style={{ fontSize:'0.75rem', color:'#9ca3af' }}>
+                        Select a code above and click any cell to add an entry.
+                    </div>
+                </div>
+            )}
+
+            {/* ── Hover tooltip ── */}
+            {tooltip && (
+                <div style={{
+                    position:'absolute',
+                    left: Math.min(tooltip.x, sizeRef.current.w - 200),
+                    top:  tooltip.y,
+                    background:'#1f2937',
+                    borderRadius:8,
+                    padding:'0.5rem 0.75rem',
+                    pointerEvents:'none',
+                    zIndex:100,
+                    boxShadow:'0 4px 16px rgba(0,0,0,0.25)',
+                    minWidth:160,
+                    maxWidth:200,
+                }}>
+                    <div style={{ fontWeight:700, fontSize:'0.8rem', color:'#f9fafb', marginBottom:2 }}>
+                        {tooltip.empName}
+                    </div>
+                    <div style={{ fontSize:'0.72rem', color:'#9ca3af', marginBottom: tooltip.code ? 6 : 0 }}>
+                        {tooltip.date}
+                    </div>
+                    {tooltip.code ? (
+                        <div style={{
+                            display:'inline-flex', alignItems:'center', gap:5,
+                            background: tooltip.bg, color: tooltip.color,
+                            borderRadius:4, padding:'2px 7px', fontSize:'0.72rem', fontWeight:800,
+                        }}>
+                            {tooltip.code}
+                            {tooltip.label && <span style={{ fontWeight:500 }}>— {tooltip.label}</span>}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize:'0.72rem', color:'#6b7280', fontStyle:'italic' }}>No entry</div>
+                    )}
+                    {!activeCode && (
+                        <div style={{ fontSize:'0.65rem', color:'#6b7280', marginTop:5, borderTop:'1px solid #374151', paddingTop:4 }}>
+                            Double-click to edit
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 });
@@ -623,18 +853,47 @@ export default function MatrixView() {
     const [filterTeam,    setFilterTeam]    = useState([]);
     const [searchTerm,    setSearchTerm]    = useState('');
     // Date range mode
-    const [rangeMode,     setRangeMode]     = useState('month'); // 'month' | 'range'
-    const [rangeStart,    setRangeStart]    = useState(todayStr);
-    const [rangeEnd,      setRangeEnd]      = useState(todayStr);
+    const [rangeMode,          setRangeMode]          = useState('month'); // 'month' | 'range'
+    const [rangeStart,         setRangeStart]         = useState(todayStr);
+    const [rangeEnd,           setRangeEnd]           = useState(todayStr);
+    // Calendar sub-view: month | week | day
+    const [calendarView,       setCalendarView]       = useState('month');
+    const [calendarAnchor,     setCalendarAnchor]     = useState(todayStr); // anchor date for week/day
+    // Rotations for filter
+    const [rotations,          setRotations]          = useState([]);
+    const [filterRotationType, setFilterRotationType] = useState([]);
+    // Conflict tracking: set of "empId_date" keys that have a conflict warning
+    const [conflictKeys,       setConflictKeys]       = useState(new Set());
 
     const [schedule, dispatchSchedule] = useReducer(scheduleReducer, {});
 
-    // Dates shown — full month OR custom range
+    // ── Calendar anchor helpers ──────────────────────────────────────────────────
+    // Week containing calendarAnchor (Sun–Sat)
+    const calendarWeekDates = useMemo(() => {
+        const d = strToDate(calendarAnchor);
+        if (!d) return [];
+        const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
+        return Array.from({length:7}, (_,i) => {
+            const x = new Date(sun); x.setDate(sun.getDate()+i); return dateToStr(x);
+        });
+    }, [calendarAnchor]);
+
+    // Dates shown — full month, week, day, or custom range
     const dates = useMemo(() => {
         if (rangeMode === 'range' && rangeStart && rangeEnd && rangeStart <= rangeEnd)
             return getDateRange(rangeStart, rangeEnd);
+        // Calendar view sub-modes only affect the CalendarView, not the matrix
+        // (matrix always shows a full month)
         return getDatesForMonth(year, monthIdx);
     }, [rangeMode, rangeStart, rangeEnd, year, monthIdx]);
+
+    // Dates for the calendar view panel (may differ from matrix dates)
+    const calendarDates = useMemo(() => {
+        if (viewMode !== 'calendar') return dates;
+        if (calendarView === 'day')  return [calendarAnchor];
+        if (calendarView === 'week') return calendarWeekDates;
+        return getDatesForMonth(year, monthIdx); // month
+    }, [viewMode, calendarView, calendarAnchor, calendarWeekDates, dates, year, monthIdx]);
 
     // All YYYY-MM months visible in the current date set
     const monthsInView = useMemo(() => {
@@ -643,14 +902,16 @@ export default function MatrixView() {
         return Array.from(seen);
     }, [dates]);
 
-    // Fetch employees + teams
+    // Fetch employees, teams, and rotations
     useEffect(() => {
         Promise.all([
             fetch('/api/matrix-users').then(r=>r.json()).catch(()=>[]),
             fetch('/api/teams').then(r=>r.json()).catch(()=>[]),
-        ]).then(([emps,tms]) => {
+            fetch('/api/rotations').then(r=>r.json()).catch(()=>[]),
+        ]).then(([emps,tms,rots]) => {
             setEmployees(Array.isArray(emps)?emps:[]);
             setTeams(Array.isArray(tms)?tms:[]);
+            setRotations(Array.isArray(rots)?rots:[]);
         }).finally(()=>setLoading(false));
     }, []);
 
@@ -683,7 +944,29 @@ export default function MatrixView() {
     const goToNext  = () => monthIdx===11 ? (setYear(y=>y+1), setMonthIdx(0))   : setMonthIdx(m=>m+1);
     const goToToday = () => { setYear(today.getFullYear()); setMonthIdx(today.getMonth()); };
 
-    // Grouped employees (respects search, team filter, row mode)
+    // Build lookup: empId → Set of rotation type names they belong to
+    const empRotationTypes = useMemo(() => {
+        const map = {};
+        rotations.forEach(rot => {
+            const typeName = rot.rotation_types?.name || rot.rotation_type_id;
+            const ids = Array.isArray(rot.assigned_member_ids) ? rot.assigned_member_ids : [];
+            ids.forEach(id => {
+                const key = String(id);
+                if (!map[key]) map[key] = new Set();
+                if (typeName) map[key].add(String(typeName));
+            });
+        });
+        return map;
+    }, [rotations]);
+
+    // Unique rotation type names for the filter panel
+    const rotationTypeNames = useMemo(() => {
+        const names = new Set();
+        rotations.forEach(r => { if (r.rotation_types?.name) names.add(r.rotation_types.name); });
+        return Array.from(names).sort();
+    }, [rotations]);
+
+    // Grouped employees (respects search, team filter, rotation type filter, row mode)
     const grouped = useMemo(() => {
         let emps = employees;
         if (searchTerm.trim()) {
@@ -691,10 +974,16 @@ export default function MatrixView() {
             emps=emps.filter(e=>e.name.toLowerCase().includes(q)||e.team_name?.toLowerCase().includes(q));
         }
         if (filterTeam.length>0) emps=emps.filter(e=>filterTeam.includes(String(e.team_id)));
+        if (filterRotationType.length>0) {
+            emps=emps.filter(e => {
+                const types = empRotationTypes[String(e.id)];
+                return types && filterRotationType.some(t => types.has(t));
+            });
+        }
         const g={};
         emps.forEach(e=>{ const k=e.team_name||'Unassigned'; if(!g[k]) g[k]=[]; g[k].push(e); });
         return g;
-    }, [employees, searchTerm, filterTeam]);
+    }, [employees, searchTerm, filterTeam, filterRotationType, empRotationTypes]);
 
     // Filtered schedule (by code filter)
     const filteredSchedule = useMemo(() => {
@@ -704,14 +993,42 @@ export default function MatrixView() {
         return r;
     }, [schedule, filterCode]);
 
-    // Cell action (drag-paint / click)
+    // Cell action (drag-paint / click) with conflict detection
     const handleCellAction = useCallback(async (key, empId, date, empName) => {
         if (!activeCode) return;
-        const existing=schedule[key]?.code?.toUpperCase();
-        const newCode=(activeCode==='CLEAR'||existing===activeCode)?null:activeCode;
+        const existing = schedule[key]?.code?.toUpperCase();
+        const newCode  = (activeCode === 'CLEAR' || existing === activeCode) ? null : activeCode;
+
+        // Optimistic update
         dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:newCode }] });
+
         try {
-            await fetch('/api/schedule', { method:'PUT', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ user_id:empId, date, code:newCode||'CLEAR' }) });
+            const res = await fetch('/api/schedule', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id:empId, date, code:newCode||'CLEAR' }),
+            });
+            const data = await res.json().catch(()=>({}));
+
+            // Conflict: server returned 409 or conflict flag
+            if (res.status === 409 || data.conflict) {
+                setConflictKeys(prev => {
+                    const n = new Set(prev);
+                    n.add(key);
+                    return n;
+                });
+            } else {
+                // Clear any previous conflict on this cell
+                setConflictKeys(prev => {
+                    if (!prev.has(key)) return prev;
+                    const n = new Set(prev); n.delete(key); return n;
+                });
+            }
+
+            if (!res.ok && res.status !== 409) {
+                // Non-conflict error — rollback
+                dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:existing||null }] });
+            }
         } catch {
             dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:existing||null }] });
         }
@@ -747,7 +1064,7 @@ export default function MatrixView() {
     const modalEntry = modal ? schedule[modal.key] : null;
     const modalEmpName = modal?.empName || employees.find(e=>String(e.id)===String(modal?.empId))?.name || '';
 
-    const hasActiveFilters = filterCode.length>0||filterTeam.length>0;
+    const hasActiveFilters = filterCode.length>0||filterTeam.length>0||filterRotationType.length>0;
 
     if (loading) return (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:200, color:'#6b7280', gap:'0.5rem' }}>
@@ -769,6 +1086,15 @@ export default function MatrixView() {
                         <button key={v} onClick={()=>setViewMode(v)} style={{ padding:'0.28rem 0.85rem', borderRadius:6, border:'none', background:viewMode===v?'#fff':'none', color:viewMode===v?'#111827':'#6b7280', fontWeight:viewMode===v?700:500, fontSize:'0.78rem', cursor:'pointer', boxShadow:viewMode===v?'0 1px 3px rgba(0,0,0,0.08)':'none', transition:'all 0.15s' }}>{lbl}</button>
                     ))}
                 </div>
+
+                {/* Calendar sub-view: Day / Week / Month — only shown in calendar mode */}
+                {viewMode === 'calendar' && (
+                    <div style={{ display:'flex', background:'#f3f4f6', borderRadius:8, padding:3, gap:2 }}>
+                        {[['day','Day'],['week','Week'],['month','Month']].map(([v,lbl])=>(
+                            <button key={v} onClick={()=>{ setCalendarView(v); setCalendarAnchor(todayStr); }} style={{ padding:'0.28rem 0.65rem', borderRadius:6, border:'none', background:calendarView===v?'#fff':'none', color:calendarView===v?'#111827':'#6b7280', fontWeight:calendarView===v?700:500, fontSize:'0.73rem', cursor:'pointer', boxShadow:calendarView===v?'0 1px 3px rgba(0,0,0,0.08)':'none', transition:'all 0.15s' }}>{lbl}</button>
+                        ))}
+                    </div>
+                )}
 
                 <div style={{ width:1, height:22, background:'#e5e7eb' }} />
 
@@ -861,6 +1187,20 @@ export default function MatrixView() {
                             {filterTeam.length>0 && <button onClick={()=>setFilterTeam([])} style={{ fontSize:'0.7rem', color:'#e31937', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>✕ Clear</button>}
                         </div>
                     </div>
+                    {/* Rotation type filter */}
+                    {rotationTypeNames.length > 0 && (
+                        <div>
+                            <div style={{ fontSize:'0.7rem', fontWeight:700, color:'#374151', marginBottom:'0.5rem', textTransform:'uppercase', letterSpacing:'0.06em' }}>Filter by Rotation Type</div>
+                            <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' }}>
+                                {rotationTypeNames.map(name => {
+                                    const on = filterRotationType.includes(name);
+                                    return <button key={name} onClick={()=>setFilterRotationType(p=>on?p.filter(t=>t!==name):[...p,name])} style={{ padding:'0.18rem 0.55rem', borderRadius:20, fontSize:'0.7rem', border:`2px solid ${on?'#0369a1':'#e5e7eb'}`, background:on?'#e0f2fe':'#fff', color:on?'#0369a1':'#9ca3af', fontWeight:on?700:400, cursor:'pointer' }}>{on?'✓ ':''}{name}</button>;
+                                })}
+                                {filterRotationType.length>0 && <button onClick={()=>setFilterRotationType([])} style={{ fontSize:'0.7rem', color:'#e31937', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>✕ Clear</button>}
+                            </div>
+                        </div>
+                    )}
+
                     {viewMode==='matrix' && (
                         <div>
                             <div style={{ fontSize:'0.7rem', fontWeight:700, color:'#374151', marginBottom:'0.5rem', textTransform:'uppercase', letterSpacing:'0.06em' }}>Highlight Code</div>
@@ -892,6 +1232,7 @@ export default function MatrixView() {
                         schedule={filteredSchedule}
                         activeCode={activeCode}
                         highlightCode={highlightCode}
+                        conflictKeys={conflictKeys}
                         onCellAction={handleCellAction}
                         onCellDoubleClick={handleCellDoubleClick}
                     />
@@ -901,7 +1242,17 @@ export default function MatrixView() {
             {/* ── Calendar View ── */}
             {viewMode==='calendar' && (
                 <div style={{ height:'calc(100vh - 260px)', minHeight:400, border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
-                    <CalendarView year={year} monthIdx={monthIdx} schedule={filteredSchedule} employees={allEmps} teams={teams} onOpenModal={openModal} />
+                    <CalendarView
+                        year={year} monthIdx={monthIdx}
+                        calendarView={calendarView}
+                        calendarDates={calendarDates}
+                        calendarAnchor={calendarAnchor}
+                        onAnchorChange={setCalendarAnchor}
+                        schedule={filteredSchedule}
+                        employees={allEmps}
+                        teams={teams}
+                        onOpenModal={openModal}
+                    />
                 </div>
             )}
 
