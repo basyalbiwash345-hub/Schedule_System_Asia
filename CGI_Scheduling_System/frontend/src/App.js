@@ -38,7 +38,7 @@ const PAGE_ACCESS_BY_ROLE = {
     'Administrator': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations', 'Roles'],
     'Team Lead / Supervisor': ['Overview', 'Matrix', 'Teams', 'Rotations'],
     'Rotation Owner': ['Overview', 'Matrix', 'Rotations'],
-    'Employee': ['Overview', 'Matrix'],
+    'Employee': ['Overview', 'Matrix', 'Teams', 'Rotations'],
 };
 const PAGE_ACCESS_ALIASES = {
     TeamDetails: 'Teams',
@@ -147,7 +147,8 @@ function App() {
     // ── NOTIFICATIONS & CONFIRMS ──────────────────────────────────────────────
     const [deleteConfirm,  setDeleteConfirm]  = useState({ open: false, user: null });
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
-    const allowedPages = getAllowedPages(currentUser?.roles || []);
+const allowedPages = getAllowedPages(currentUser?.roles || []);
+    const isTeamAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
     const shouldLoadUsers = allowedPages.some(page => ['Users', 'Teams', 'Rotations', 'Roles'].includes(page));
     const shouldLoadTeams = allowedPages.some(page => ['Teams', 'Rotations'].includes(page));
     const shouldLoadRoles = allowedPages.some(page => ['Users', 'Roles'].includes(page));
@@ -322,9 +323,19 @@ function App() {
     };
 
     // ── TEAM HANDLERS ─────────────────────────────────────────────────────────
-    const openCreateTeam = () => { setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); };
+const openCreateTeam = () => { 
+    if (!isTeamAdmin) {
+        showNotification('Employees cannot create teams. Contact an administrator.', 'error');
+        return;
+    }
+    setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true); 
+};
     const openViewTeam   = (team) => { setViewingTeam(team); setShowViewTeamModal(true); };
     const openEditTeam   = (team) => {
+    if (!isTeamAdmin) {
+        showNotification('Employees cannot edit teams. Contact an administrator.', 'error');
+        return;
+    }
         setTeamFormData({
             name: team.name, color: team.color || '#e31937', leadId: team.lead_id || '',
             members: Array.isArray(team.members) ? team.members : team.members ? JSON.parse(team.members) : [],
@@ -762,9 +773,11 @@ function App() {
 
             return (
                 <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2 style={{ margin: 0, color: '#111827' }}>Team Management</h2>
-                        <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>+ Create Team</button>
+                        {isTeamAdmin ? (
+                            <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>+ Create Team</button>
+                        ) : null}
                     </div>
                     {/* Team Search & Filter */}
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'center', background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
@@ -834,8 +847,12 @@ function App() {
                                         <td style={{ color: '#6b7280', fontSize: '0.85rem' }}>{team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}</td>
                                         <td>
                                             <button onClick={() => openViewTeam(team)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
-                                            <button onClick={() => openEditTeam(team)} style={{ marginRight: '0.5rem' }}>Edit</button>
-                                            <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>Delete</button>
+                                            {isTeamAdmin ? (
+                                                <>
+                                                    <button onClick={() => openEditTeam(team)} style={{ marginRight: '0.5rem' }}>Edit</button>
+                                                    <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>Delete</button>
+                                                </>
+                                            ) : null}
                                         </td>
                                     </tr>
                                 );
@@ -937,7 +954,9 @@ function App() {
                                     );
                                 })()}
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                                    <button onClick={() => { setShowViewTeamModal(false); openEditTeam(viewingTeam); }} className="btn-primary" style={{ flex: 1 }}>Edit Team</button>
+                                    {isTeamAdmin && (
+                                        <button onClick={() => { setShowViewTeamModal(false); openEditTeam(viewingTeam); }} className="btn-primary" style={{ flex: 1 }}>Edit Team</button>
+                                    )}
                                     <button onClick={() => setShowViewTeamModal(false)} className="btn-cancel" style={{ flex: 1 }}>Close</button>
                                 </div>
                             </div>
@@ -1166,7 +1185,7 @@ function App() {
                 'Administrator':          ['Full system access', 'Manage users & roles', 'Manage teams & rotations', 'View all schedules', 'Approve leave requests', 'Access audit logs'],
                 'Team Lead / Supervisor': ['Manage team members', 'Approve leave requests', 'View team schedules', 'Assign rotations'],
                 'Rotation Owner':         ['Create & manage rotations', 'Assign employees to rotations', 'View rotation schedules'],
-                'Employee':               ['View personal schedule', 'Submit leave requests', 'View team calendar'],
+                'Employee':               ['View personal schedule', 'Submit leave requests', 'View team calendar', 'View teams', 'View rotations'],
             };
             return (
                 <div>

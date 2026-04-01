@@ -3,6 +3,25 @@ var router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// Team Admin middleware - matches frontend isTeamAdmin logic
+const requireTeamAdmin = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    const isTeamAdmin = decoded.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role));
+    if (!isTeamAdmin) {
+      return res.status(403).json({ error: 'Access denied: Team admin required (Administrator or Team Lead)' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Token is not valid' });
+  }
+};
+
 // GET /api/teams
 router.get('/', async function(req, res) {
   try {
@@ -42,7 +61,7 @@ router.get('/:id', async function(req, res) {
 });
 
 // POST /api/teams
-router.post('/', async function(req, res) {
+router.post('/', requireTeamAdmin, async function(req, res) {
   try {
     const { name, color, leadId, members, role, description } = req.body;
     const team = await prisma.teams.create({
@@ -63,7 +82,7 @@ router.post('/', async function(req, res) {
 });
 
 // PUT /api/teams/:id
-router.put('/:id', async function(req, res) {
+router.put('/:id', requireTeamAdmin, async function(req, res) {
   try {
     const { name, color, leadId, members, role, description } = req.body;
     const team = await prisma.teams.update({
@@ -85,7 +104,7 @@ router.put('/:id', async function(req, res) {
 });
 
 // DELETE /api/teams/:id
-router.delete('/:id', async function(req, res) {
+router.delete('/:id', requireTeamAdmin, async function(req, res) {
   try {
     await prisma.teams.delete({ where: { id: parseInt(req.params.id) } });
     res.json({ message: 'Team deleted successfully' });
