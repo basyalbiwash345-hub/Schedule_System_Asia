@@ -38,7 +38,7 @@ const PAGE_ACCESS_BY_ROLE = {
     'Administrator': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations', 'Roles'],
     'Team Lead / Supervisor': ['Overview', 'Matrix', 'Teams', 'Rotations'],
     'Rotation Owner': ['Overview', 'Matrix', 'Rotations'],
-    'Employee': ['Overview', 'Matrix', 'Teams', 'Rotations'],
+    'Employee': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations'],
 };
 const PAGE_ACCESS_ALIASES = {
     TeamDetails: 'Teams',
@@ -149,6 +149,8 @@ function App() {
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
 const allowedPages = getAllowedPages(currentUser?.roles || []);
     const isTeamAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
+    const isUserAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
+    const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner'].includes(role)) || false;
     const shouldLoadUsers = allowedPages.some(page => ['Users', 'Teams', 'Rotations', 'Roles'].includes(page));
     const shouldLoadTeams = allowedPages.some(page => ['Teams', 'Rotations'].includes(page));
     const shouldLoadRoles = allowedPages.some(page => ['Users', 'Roles'].includes(page));
@@ -555,7 +557,7 @@ const openCreateTeam = () => {
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2 style={{ margin: 0, color: '#111827' }}>User Management</h2>
-                        <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateUser}>+ Create User</button>
+                        {isUserAdmin ? <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateUser}>+ Create User</button> : null}
                     </div>
                     {/* Search & Filter Bar */}
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'flex-end', background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
@@ -632,8 +634,8 @@ const openCreateTeam = () => {
                                     <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
                                     <td>
                                         <button onClick={() => openViewUser(u)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
-                                        <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>
-                                        <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>
+                                        {isUserAdmin && <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>}
+                                        {isUserAdmin && <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>}
                                     </td>
                                 </tr>
                             ))}
@@ -668,7 +670,9 @@ const openCreateTeam = () => {
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                                    <button onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }} className="btn-primary" style={{ flex: 1 }}>Edit This User</button>
+                                    {isUserAdmin && (
+                                        <button onClick={() => { setShowViewModal(false); openEditUser(viewingUser); }} className="btn-primary" style={{ flex: 1 }}>Edit This User</button>
+                                    )}
                                     <button onClick={() => setShowViewModal(false)} className="btn-cancel" style={{ flex: 1 }}>Close</button>
                                 </div>
                             </div>
@@ -1065,13 +1069,13 @@ const openCreateTeam = () => {
             );
             return (
                 <div className="grid-container">
-                    {!editingRotation && (
+                    {!editingRotation && isRotationAdmin && (
                         <div className="enterprise-card">
                             <h3>New Rotation</h3>
                             {renderRotationForm()}
                         </div>
                     )}
-                    <div className="enterprise-card no-padding" style={editingRotation ? { gridColumn: '1 / -1' } : {}}>
+                    <div className="enterprise-card no-padding" style={(editingRotation || !isRotationAdmin) ? { gridColumn: '1 / -1' } : {}}>
                     {/* Rotation Filter Bar */}
                     <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
                         <div style={{ flex: 2, minWidth: '180px' }}>
@@ -1126,7 +1130,7 @@ const openCreateTeam = () => {
                                                     <td>{formatCoverageLabel(r)}</td>
                                                     <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
                                                     <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
-                                                    <td><button onClick={() => openViewRotation(r)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button><button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button><button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button></td>
+                                                    <td><button onClick={() => openViewRotation(r)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>{isRotationAdmin && <button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button>}{isRotationAdmin && <button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button>}</td>
                                                 </tr>
                                             ))}
                                             </tbody>
@@ -1168,7 +1172,9 @@ const openCreateTeam = () => {
                                                     <div className="info-box" style={{ gridColumn: 'span 2' }}><label>Notes</label><p>{viewingRotation.notes || 'No notes provided.'}</p></div>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                                                    <button onClick={() => openEditRotation(viewingRotation)} className="btn-primary" style={{ flex: 1 }}>Edit Rotation</button>
+                                                    {isRotationAdmin && (
+                                                        <button onClick={() => openEditRotation(viewingRotation)} className="btn-primary" style={{ flex: 1 }}>Edit Rotation</button>
+                                                    )}
                                                     <button onClick={closeViewRotation} className="btn-cancel" style={{ flex: 1 }}>Close</button>
                                                 </div>
                                             </div>
