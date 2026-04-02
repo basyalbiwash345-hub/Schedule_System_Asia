@@ -326,17 +326,45 @@ function App() {
         if (userFormErrors.roles) setUserFormErrors(prev => { const e = { ...prev }; delete e.roles; return e; });
     };
     const handleSaveUser = async (e) => {
-        e.preventDefault(); setUserFormErrors({}); setUserFormSuccess('');
+        e.preventDefault();
+        setUserFormErrors({});
+        setUserFormSuccess('');
+
         const method = editingUser ? 'PUT' : 'POST';
         const url    = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
+
+        // 1. Retrieve the token from localStorage
+        const token = localStorage.getItem('token');
+
         try {
-            const res  = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userForm) });
+            const res  = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 2. Add the Authorization header
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(userForm)
+            });
+
             const data = await res.json();
-            if (!res.ok) { setUserFormErrors(data.errors || { general: data.error || 'An error occurred.' }); return; }
+
+            if (!res.ok) {
+                // If the error is 401, it means the token is missing or invalid
+                if (res.status === 401) {
+                    setUserFormErrors({ general: 'Session expired or unauthorized. Please log in again.' });
+                    return;
+                }
+                setUserFormErrors(data.errors || { general: data.error || 'An error occurred.' });
+                return;
+            }
+
             setUserFormSuccess(editingUser ? 'User updated successfully.' : 'User created successfully.');
             fetchUsers();
             setTimeout(() => { closeUserModal(); }, 1500);
-        } catch { setUserFormErrors({ general: 'Network error. Please try again.' }); }
+        } catch {
+            setUserFormErrors({ general: 'Network error. Please try again.' });
+        }
     };
     const handleDeleteUser    = (user) => setDeleteConfirm({ open: true, user });
     const handleConfirmDelete = async () => {
