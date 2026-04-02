@@ -463,37 +463,71 @@ app.get('/api/teams', async (req, res) => {
 });
 
 app.post('/api/teams', authorizeAdmin, async (req, res) => {
+    const { name, color, leadId, members, description } = req.body;
     try {
-        const { name, color, leadId, description, members } = req.body;
-        const team = await prisma.teams.create({
+        // 1. Create the team first
+        const newTeam = await prisma.teams.create({
             data: {
-                name, color,
-                lead_id: parseOptionalInt(leadId),
+                name,
+                color,
                 description,
-                members: Array.isArray(members) ? JSON.stringify(members) : null,
+                lead_id: leadId ? parseInt(leadId) : null,
+                members: JSON.stringify(members)
             },
-            include: { lead: true },
+            include: { lead: true }
         });
-        res.status(201).json(team);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+
+        // 2. SYNC: Assign this new team ID to all selected users
+        if (members && members.length > 0) {
+            await prisma.users.updateMany({
+                where: { id: { in: members.map(id => parseInt(id)) } },
+                data: { team_id: newTeam.id }
+            });
+        }
+
+        res.json(newTeam);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create team.' });
+    }
 });
 
 app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
-    const teamId = parseOptionalInt(req.params.id);
-    const { name, color, leadId, description, members } = req.body;
+    const { id } = req.params;
+    const { name, color, leadId, members, description } = req.body;
+    const teamIdInt = parseInt(id);
+
     try {
-        const updatedTeam = await prisma.teams.update({
-            where: { id: teamId },
-            data: {
-                name, color,
-                lead_id: parseOptionalInt(leadId),
-                description,
-                members: Array.isArray(members) ? JSON.stringify(members) : null,
-            },
-            include: { lead: true },
+        // 1. Clear team_id for ANYONE currently assigned to this team
+        await prisma.users.updateMany({
+            where: { team_id: teamIdInt },
+            data: { team_id: null }
         });
+
+        // 2. Update the team record
+        const updatedTeam = await prisma.teams.update({
+            where: { id: teamIdInt },
+            data: {
+                name,
+                color,
+                description,
+                lead_id: leadId ? parseInt(leadId) : null,
+                members: JSON.stringify(members)
+            },
+            include: { lead: true }
+        });
+
+        // 3. SYNC: Set team_id for the NEW list of members
+        if (members && members.length > 0) {
+            await prisma.users.updateMany({
+                where: { id: { in: members.map(mid => parseInt(mid)) } },
+                data: { team_id: teamIdInt }
+            });
+        }
+
         res.json(updatedTeam);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update team.' });
+    }
 });
 
 // FIX #4: Added authorizeAdmin middleware to DELETE /api/teams/:id

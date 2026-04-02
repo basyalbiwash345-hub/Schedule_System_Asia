@@ -341,13 +341,29 @@ function App() {
     const handleDeleteUser    = (user) => setDeleteConfirm({ open: true, user });
     const handleConfirmDelete = async () => {
         const user = deleteConfirm.user;
+
+        // 1. Get the token from storage
+        const token = localStorage.getItem('token');
+
         setDeleteConfirm({ open: false, user: null });
         try {
-            const res  = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/users/${user.id}`, {
+                method: 'DELETE',
+                // 2. Add the Authorization header
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             const data = await res.json();
-            if (res.ok) { fetchUsers(); showNotification('User deleted successfully.'); }
-            else showNotification(data.error || 'Failed to delete user.', 'error');
-        } catch { showNotification('Network error. Please try again.', 'error'); }
+            if (res.ok) {
+                fetchUsers();
+                showNotification('User deleted successfully.');
+            } else {
+                showNotification(data.error || 'Failed to delete user.', 'error');
+            }
+        } catch {
+            showNotification('Network error. Please try again.', 'error');
+        }
     };
 
     // ── TEAM HANDLERS ─────────────────────────────────────────────────────────
@@ -391,10 +407,10 @@ const openCreateTeam = () => {
         });
 
         if (r.ok) {
-            fetchTeams();
+            await fetchTeams(); // Refresh teams list
+            await fetchUsers(); // ADD THIS: Refresh users list to show new assignments
             closeTeamModal();
-        } else if (r.status === 401) {
-            showNotification('Session expired or unauthorized. Please log in again.', 'error');
+            showNotification('Team and member assignments updated successfully.');
         }
     };
     const handleDeleteTeam = (id) => {
