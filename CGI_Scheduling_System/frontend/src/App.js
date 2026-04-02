@@ -147,7 +147,7 @@ function App() {
     // ── NOTIFICATIONS & CONFIRMS ──────────────────────────────────────────────
     const [deleteConfirm,  setDeleteConfirm]  = useState({ open: false, user: null });
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
-const allowedPages = getAllowedPages(currentUser?.roles || []);
+    const allowedPages = getAllowedPages(currentUser?.roles || []);
     const isTeamAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
     const isUserAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
     const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner'].includes(role)) || false;
@@ -194,12 +194,31 @@ const allowedPages = getAllowedPages(currentUser?.roles || []);
         setActivePage(getDefaultPageForUser(currentUser));
     }, [isLoggedIn, currentUser, activePage]);
 
-    const fetchUsers     = async () => { try { const r = await fetch('/api/users');     const d = await r.json(); setUsers(Array.isArray(d) ? d : []);     } catch { setUsers([]); } };
-    const fetchTeams     = async () => { try { const r = await fetch('/api/teams');     const d = await r.json(); setTeams(Array.isArray(d) ? d : []);     } catch { setTeams([]); } };
+    const fetchUsers = async () => {
+        try {
+            // ADD THIS LINE: Get the token
+            const token = localStorage.getItem('token');
+
+            const r = await fetch('/api/users', {
+                // ADD THIS HEADERS OBJECT
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const d = await r.json();
+            setUsers(Array.isArray(d) ? d : []);
+        } catch {
+            setUsers([]);
+        }
+    };
+    const fetchTeams     = async () => {
+        const token = localStorage.getItem('token');
+        try { const r = await fetch('/api/teams', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setTeams(Array.isArray(d) ? d : []); } catch { setTeams([]); }
+    };
     const fetchRoles     = async () => { try { const r = await fetch('/api/roles');     const d = await r.json(); setRoles(Array.isArray(d) ? d : []);     } catch { setRoles([]); } };
     const fetchLocations = async () => { try { const r = await fetch('/api/locations'); const d = await r.json(); setLocations(Array.isArray(d) ? d : []); } catch { setLocations([]); } };
-    const fetchRotations = async () => { try { const r = await fetch('/api/rotations'); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); } };
-
+    const fetchRotations = async () => {
+        const token = localStorage.getItem('token');
+        try { const r = await fetch('/api/rotations', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); }
+    };
     const inferIntervalPreset = (unit, count) => {
         if (unit === 'day'    && count === 1) return 'daily';
         if (unit === 'week'   && count === 1) return 'weekly';
@@ -220,18 +239,25 @@ const allowedPages = getAllowedPages(currentUser?.roles || []);
                 return { ok: false, error: data.error || 'Access denied.' };
             }
 
+            // --- THIS IS THE MISSING STEP 3 ---
+            // You must save the token here so localStorage.getItem('token') works later
+            if (data.token) {
+                localStorage.setItem('token', data.token);
+            }
+            localStorage.setItem('user', JSON.stringify(data.user));
+            // ---------------------------------
+
             const authenticatedUser = {
                 ...data.user,
                 role: data.user.primary_role || getPrimaryRole(data.user.roles || []),
             };
 
             setCurrentUser(authenticatedUser);
-            setSelectedTeam(null);
             setIsLoggedIn(true);
             setActivePage(getDefaultPageForUser(authenticatedUser));
             return { ok: true };
         } catch {
-            return { ok: false, error: 'Unable to reach the server. Please try again.' };
+            return { ok: false, error: 'Unable to reach the server.' };
         }
     };
 
@@ -350,8 +376,26 @@ const openCreateTeam = () => {
         e.preventDefault();
         const method = editingTeam ? 'PUT' : 'POST';
         const url    = editingTeam ? `/api/teams/${editingTeam.id}` : '/api/teams';
-        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(teamFormData) });
-        if (r.ok) { fetchTeams(); closeTeamModal(); }
+
+        // ADD THIS LINE: Get the token
+        const token = localStorage.getItem('token');
+
+        const r = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                // ADD THIS LINE: Send the token
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(teamFormData)
+        });
+
+        if (r.ok) {
+            fetchTeams();
+            closeTeamModal();
+        } else if (r.status === 401) {
+            showNotification('Session expired or unauthorized. Please log in again.', 'error');
+        }
     };
     const handleDeleteTeam = (id) => {
         const team = teams.find(t => t.id === id);
@@ -359,9 +403,15 @@ const openCreateTeam = () => {
     };
     const handleConfirmDeleteTeam = async () => {
         const { teamId } = teamDeleteConfirm;
+        const token = localStorage.getItem('token'); // Get token
+
         setTeamDeleteConfirm({ open: false, teamId: null, teamName: '' });
         try {
-            const r = await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
+            const r = await fetch(`/api/teams/${teamId}`, {
+                method: 'DELETE',
+                // ADD HEADERS HERE
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (r.ok) { fetchTeams(); showNotification('Team deleted successfully.'); }
             else { const data = await r.json(); showNotification(data.error || 'Failed to delete team.', 'error'); }
         } catch { showNotification('Network error. Please try again.', 'error'); }
@@ -972,8 +1022,7 @@ const openCreateTeam = () => {
 
         // ── ROTATIONS ─────────────────────────────────────────────────────────
         if (activePage === 'Rotations') {
-            const availableMembers = users.filter(u => String(u.team_id) === String(rotationFormData.team_id));
-            const filteredAvailableMembers = availableMembers.filter(u => {
+            const availableMembers = users.filter(u => u.team_id && String(u.team_id) === String(rotationFormData.team_id));            const filteredAvailableMembers = availableMembers.filter(u => {
                 const query = rotationMemberSearch.trim().toLowerCase();
                 if (!query) return true;
                 return (

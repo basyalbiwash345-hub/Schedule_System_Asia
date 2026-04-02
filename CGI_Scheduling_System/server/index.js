@@ -249,7 +249,13 @@ app.post('/api/auth/login', async (req, res) => {
             if (!adminUser)
                 return res.status(500).json({ error: 'Administrator role is unavailable.' });
 
-            return res.json({ user: serializeAuthenticatedUser(adminUser) });
+            // CHANGE THE LINE BELOW:
+            const token = jwt.sign(
+                { id: adminUser.id, username: adminUser.username, roles: ['Administrator'] },
+                JWT_SECRET,
+                { expiresIn: '8h' }
+            );
+            return res.json({ token, user: serializeAuthenticatedUser(adminUser) });
         }
 
         const user = await findUserForAuth(identifier);
@@ -296,7 +302,7 @@ app.get('/api/users/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', authorizeAdmin, async (req, res) => {
     const { first_name, last_name, username, email, password, phone, location, team_id, roles } = req.body;
     const validationErrors = validateUserPayload(req.body);
     if (Object.keys(validationErrors).length)
