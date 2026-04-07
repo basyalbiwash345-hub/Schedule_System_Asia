@@ -169,7 +169,8 @@ const validateMembersForScope = async (
     memberIds,
     teamId,
     locationId,
-    errors
+    errors,
+    existingRotation = null
 ) => {
     if (!memberIds.length) return { members: [] };
 
@@ -184,7 +185,19 @@ const validateMembersForScope = async (
     }
 
     if (teamId !== null) {
-        const invalid = members.filter((m) => m.team_id !== teamId);
+        const existingMemberIds = new Set(
+            Array.isArray(existingRotation?.assigned_member_ids)
+                ? existingRotation.assigned_member_ids
+                    .map((id) => Number.parseInt(id, 10))
+                    .filter((id) => !Number.isNaN(id))
+                : []
+        );
+        const teamUnchanged = existingRotation?.team_id === teamId;
+        const invalid = members.filter((m) => {
+            if (m.team_id === teamId) return false;
+            return !(teamUnchanged && existingMemberIds.has(m.id));
+        });
+
         if (invalid.length) {
             errors.push(
                 'Assigned members must belong to the selected team.'
@@ -317,7 +330,8 @@ router.post('/', async (req, res) => {
         data.assigned_member_ids,
         data.team_id,
         data.location_id,
-        errors
+        errors,
+        null
     );
     if (errors.length) return res.status(400).json({ errors });
 
@@ -338,19 +352,26 @@ router.put('/:id', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
+    let existing;
+    try {
+        existing = await prisma.rotations.findUnique({ where: { id } });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+
+    if (!existing)
+        return res.status(404).json({ error: 'Rotation not found' });
+
     await validateMembersForScope(
         data.assigned_member_ids,
         data.team_id,
         data.location_id,
-        errors
+        errors,
+        existing
     );
     if (errors.length) return res.status(400).json({ errors });
 
     try {
-        const existing = await prisma.rotations.findUnique({ where: { id } });
-        if (!existing)
-            return res.status(404).json({ error: 'Rotation not found' });
-
         const updated = await prisma.rotations.update({
             where: { id },
             data,

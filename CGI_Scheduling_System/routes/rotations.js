@@ -26,24 +26,35 @@ const validateRotationPayload = (payload) => {
     const teamId = parseOptionalInt(payload.team_id);
     const locationId = parseOptionalInt(payload.location_id);
     const startDate = parseRequiredDate(payload.start_date);
+    const endDate = parseRequiredDate(payload.end_date);
     const intervalUnit = payload.interval_unit;
     const intervalCount =
         payload.interval_count ? Number.parseInt(payload.interval_count, 10) : 1;
     const status = payload.status || 'active';
+    const assignedMemberIds = Array.isArray(payload.assigned_member_ids)
+        ? payload.assigned_member_ids
+            .map((id) => Number.parseInt(id, 10))
+            .filter((id) => !Number.isNaN(id))
+        : [];
+    const notes = payload.notes ? String(payload.notes).trim() : '';
+    const allowDoubleBooking = Boolean(payload.allow_double_booking);
+    const escalationTiers = payload.escalation_tiers
+        ? (typeof payload.escalation_tiers === 'string'
+            ? payload.escalation_tiers.trim()
+            : payload.escalation_tiers)
+        : null;
 
     if (!name) errors.push('Rotation name is required.');
-    if (!rotationTypeId) errors.push('Rotation type is required.');
     if (!startDate) errors.push('Start date is required.');
+    if (!endDate) errors.push('End date is required.');
+    if (startDate && endDate && endDate < startDate)
+        errors.push('End date must be on or after the start date.');
     if (!ALLOWED_INTERVAL_UNITS.has(intervalUnit)) errors.push('Interval unit is invalid.');
     if (Number.isNaN(intervalCount) || intervalCount < 1)
         errors.push('Interval count must be at least 1.');
     if (!ALLOWED_STATUS.has(status)) errors.push('Status is invalid.');
-
-    const hasTeam = teamId !== null;
-    const hasLocation = locationId !== null;
-
-    if (hasTeam === hasLocation)
-        errors.push('Must choose either team OR location (not both).');
+    if (teamId === null) errors.push('Assigned team is required.');
+    if (!assignedMemberIds.length) errors.push('Assigned members are required.');
 
     return {
         errors,
@@ -53,9 +64,14 @@ const validateRotationPayload = (payload) => {
             team_id: teamId,
             location_id: locationId,
             start_date: startDate,
+            end_date: endDate,
             interval_unit: intervalUnit,
             interval_count: intervalCount,
-            status
+            status,
+            assigned_member_ids: assignedMemberIds,
+            notes: notes || null,
+            allow_double_booking: allowDoubleBooking,
+            escalation_tiers: escalationTiers || null
         }
     };
 };

@@ -745,6 +745,12 @@ const openCreateTeam = () => {
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
     };
     const openEditRotation = (rotation) => {
+        const assignedMemberIds = Array.isArray(rotation.assigned_member_ids)
+            ? rotation.assigned_member_ids.map(id => String(id))
+            : [];
+        const existingAssignedMemberIds = assignedMemberIds.filter(id => userIdLookup[id]);
+        const removedMemberCount = assignedMemberIds.length - existingAssignedMemberIds.length;
+
         setShowCreateRotationModal(false);
         setEditingRotation(rotation);
         setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
@@ -760,10 +766,14 @@ const openCreateTeam = () => {
             end_date: rotation.end_date?.split('T')[0] || rotation.start_date?.split('T')[0] || getTodayDate(),
             interval_unit: rotation.interval_unit || 'week', interval_count: rotation.interval_count || 1,
             status: rotation.status || 'active',
-            assigned_member_ids: Array.isArray(rotation.assigned_member_ids) ? rotation.assigned_member_ids.map(id => String(id)) : [],
+            assigned_member_ids: existingAssignedMemberIds,
             notes: rotation.notes || '', allow_double_booking: Boolean(rotation.allow_double_booking),
             escalation_tiers: Array.isArray(rotation.escalation_tiers) ? rotation.escalation_tiers.join(', ') : rotation.escalation_tiers ? JSON.stringify(rotation.escalation_tiers) : ''
         });
+
+        if (removedMemberCount > 0) {
+            showNotification('Some previously assigned members no longer exist. Please review the rotation members before saving.', 'error');
+        }
     };
 
     // ── STYLE HELPERS ─────────────────────────────────────────────────────────
@@ -773,6 +783,7 @@ const openCreateTeam = () => {
     const fieldWrap   = { marginBottom: '1rem' };
 
     const userLookup = users.reduce((acc, user) => { acc[user.id] = user; return acc; }, {});
+    const userIdLookup = users.reduce((acc, user) => { acc[String(user.id)] = user; return acc; }, {});
 
     const formatIntervalLabel = (unit, count) => {
         const b = { day: 'Daily', week: 'Weekly', biweek: 'Bi-Weekly', month: 'Monthly' }[unit] || unit;
@@ -788,6 +799,14 @@ const openCreateTeam = () => {
         return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
     };
     const formatRotationTeamName = (rotation) => rotation?.teams?.name || 'N/A';
+    const getRotationAvailableMembers = (teamId, assignedIds = []) => {
+        const assignedSet = new Set((assignedIds || []).map(id => String(id)));
+        return users.filter(user => {
+            const isAssigned = assignedSet.has(String(user.id));
+            const isOnSelectedTeam = user.team_id && String(user.team_id) === String(teamId);
+            return isAssigned || isOnSelectedTeam;
+        });
+    };
     const getRotationMemberNames = (rotation) => {
         const ids = Array.isArray(rotation?.assigned_member_ids) ? rotation.assigned_member_ids : [];
         return ids.map(id => userLookup[id]?.name).filter(Boolean);
@@ -1251,7 +1270,7 @@ const openCreateTeam = () => {
 
         // ── ROTATIONS ─────────────────────────────────────────────────────────
         if (activePage === 'Rotations') {
-            const availableMembers = users.filter(u => u.team_id && String(u.team_id) === String(rotationFormData.team_id));
+            const availableMembers = getRotationAvailableMembers(rotationFormData.team_id, rotationFormData.assigned_member_ids);
             const filteredAvailableMembers = availableMembers.filter(u => {
                 const query = rotationMemberSearch.trim().toLowerCase();
                 if (!query) return true;
@@ -1289,7 +1308,7 @@ const openCreateTeam = () => {
                     </div>
                     <div className="form-group">
                         <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
-                        {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Select a team to load members.</p> : (
+                        {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>{rotationFormData.team_id ? 'No members are currently available for this team.' : 'Select a team to load members.'}</p> : (
                             <div style={{ position: 'relative' }}>
                                 <button type="button" onClick={() => setShowRotationMemberDropdown(!showRotationMemberDropdown)} style={{ width: '100%', padding: '0.65rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
                                     {rotationFormData.assigned_member_ids.length === 0 ? 'Select members' : `${rotationFormData.assigned_member_ids.length} member(s) selected`}<span>{showRotationMemberDropdown ? '▲' : '▼'}</span>
