@@ -113,6 +113,7 @@ const parseRotationPayload = (payload) => {
     const rotationTypeId = parseOptionalInt(payload.rotation_type_id);
     const teamId = parseOptionalInt(payload.team_id);
     const startDate = parseRequiredDate(payload.start_date);
+    const endDate = parseRequiredDate(payload.end_date);
     const intervalUnit = payload.interval_unit;
     const intervalCount =
         payload.interval_count ? Number.parseInt(payload.interval_count, 10) : 1;
@@ -129,6 +130,9 @@ const parseRotationPayload = (payload) => {
 
     if (!name) errors.push('Rotation name is required.');
     if (!startDate) errors.push('Start date is required.');
+    if (!endDate) errors.push('End date is required.');
+    if (startDate && endDate && endDate < startDate)
+        errors.push('End date must be on or after the start date.');
     if (!ALLOWED_INTERVAL_UNITS.has(intervalUnit))
         errors.push('Interval unit is invalid.');
     if (Number.isNaN(intervalCount) || intervalCount < 1)
@@ -149,6 +153,7 @@ const parseRotationPayload = (payload) => {
             team_id: teamId,
             location_id: null,
             start_date: startDate,
+            end_date: endDate,
             interval_unit: intervalUnit,
             interval_count: intervalCount,
             status,
@@ -215,6 +220,7 @@ const validateDoubleBooking = async (
     rotationId,
     memberIds,
     startDate,
+    endDate,
     intervalUnit,
     intervalCount,
     errors
@@ -227,6 +233,7 @@ const validateDoubleBooking = async (
             id: true,
             name: true,
             start_date: true,
+            end_date: true,
             interval_unit: true,
             interval_count: true,
             assigned_member_ids: true,
@@ -234,11 +241,7 @@ const validateDoubleBooking = async (
     });
 
     const newStart = startDate;
-    const newEnd = getIntervalEndDate(
-        startDate,
-        intervalUnit,
-        intervalCount
-    );
+    const newEnd = endDate || getIntervalEndDate(startDate, intervalUnit, intervalCount);
 
     const conflictingMembers = new Set();
 
@@ -252,11 +255,13 @@ const validateDoubleBooking = async (
         if (!existingIds.length) return;
 
         const existingStart = rotation.start_date;
-        const existingEnd = getIntervalEndDate(
-            existingStart,
-            rotation.interval_unit,
-            rotation.interval_count || 1
-        );
+        const existingEnd =
+            rotation.end_date ||
+            getIntervalEndDate(
+                existingStart,
+                rotation.interval_unit,
+                rotation.interval_count || 1
+            );
 
         if (!intervalsOverlap(newStart, newEnd, existingStart, existingEnd))
             return;

@@ -23,12 +23,26 @@ const INTERVAL_UNIT_OPTIONS = [
     { value: 'month',  label: 'Month(s)'   }
 ];
 
-const DEFAULT_ROTATION_FORM = {
-    name: '', team_id: '', location_id: '',
-    start_date: new Date().toISOString().split('T')[0],
-    interval_unit: 'week', interval_count: 1, status: 'active',
-    assigned_member_ids: [], notes: '', allow_double_booking: false, escalation_tiers: ''
+const getTodayDate = () => new Date().toISOString().split('T')[0];
+
+const buildDefaultRotationForm = () => {
+    const today = getTodayDate();
+    return {
+        name: '',
+        team_id: '',
+        location_id: '',
+        start_date: today,
+        end_date: today,
+        interval_unit: 'week',
+        interval_count: 1,
+        status: 'active',
+        assigned_member_ids: [],
+        notes: '',
+        allow_double_booking: false,
+        escalation_tiers: ''
+    };
 };
+
 const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [], description: '' };
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
 const DEFAULT_ROTATION_DELETE_CONFIRM = { open: false, rotationId: null, rotationName: '' };
@@ -126,7 +140,8 @@ function App() {
     const [teamMemberFilterSearch,setTeamMemberFilterSearch]= useState('');
 
     // ── ROTATION STATE ────────────────────────────────────────────────────────
-    const [rotationFormData,    setRotationFormData]    = useState(DEFAULT_ROTATION_FORM);
+    const [rotationFormData,    setRotationFormData]    = useState(buildDefaultRotationForm);
+    const [showCreateRotationModal, setShowCreateRotationModal] = useState(false);
     const [editingRotation,     setEditingRotation]     = useState(null);
     const [intervalPreset,      setIntervalPreset]      = useState('weekly');
     const [rotationNamePreset,  setRotationNamePreset]  = useState('');
@@ -161,6 +176,7 @@ function App() {
         closeTeamModal();
         closeRotationPopup();
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+        setShowCreateRotationModal(false);
         setShowRotationMemberDropdown(false);
         setRotationMemberSearch('');
         setViewingRotation(null);
@@ -279,7 +295,7 @@ function App() {
     };
 
     const resetRotationForm = () => {
-        setRotationFormData(DEFAULT_ROTATION_FORM);
+        setRotationFormData(buildDefaultRotationForm());
         setEditingRotation(null);
         setIntervalPreset('weekly');
         setRotationNamePreset('');
@@ -288,7 +304,20 @@ function App() {
     };
     const closeRotationPopup = () => setRotationPopup(DEFAULT_ROTATION_POPUP);
     const showRotationPopup = (type, title, message) => setRotationPopup({ open: true, type, title, message });
+    const openCreateRotation = () => {
+        if (!isRotationAdmin) {
+            showRotationPopup('error', 'Access denied', 'You do not have permission to create rotations.');
+            return;
+        }
+
+        closeViewRotation();
+        closeRotationPopup();
+        setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
+        resetRotationForm();
+        setShowCreateRotationModal(true);
+    };
     const closeEditRotation = () => {
+        setShowCreateRotationModal(false);
         resetRotationForm();
         closeRotationPopup();
     };
@@ -481,6 +510,14 @@ const openCreateTeam = () => {
             showRotationPopup('error', errorTitle, 'Start date is required.');
             return;
         }
+        if (!rotationFormData.end_date) {
+            showRotationPopup('error', errorTitle, 'End date is required.');
+            return;
+        }
+        if (rotationFormData.end_date < rotationFormData.start_date) {
+            showRotationPopup('error', errorTitle, 'End date must be on or after the start date.');
+            return;
+        }
 
         const assignedMembers = (rotationFormData.assigned_member_ids || []).map(id => String(id)).filter(Boolean);
         if (!assignedMembers.length) {
@@ -518,6 +555,7 @@ const openCreateTeam = () => {
 
             await fetchRotations();
             resetRotationForm();
+            setShowCreateRotationModal(false);
             showRotationPopup(
                 'success',
                 isEditing ? 'Rotation updated' : 'Rotation created',
@@ -563,6 +601,7 @@ const openCreateTeam = () => {
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
     };
     const openEditRotation = (rotation) => {
+        setShowCreateRotationModal(false);
         setEditingRotation(rotation);
         setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
         setRotationNamePreset(ROTATION_NAME_OPTIONS.includes(rotation.name) ? rotation.name : 'custom');
@@ -573,7 +612,8 @@ const openCreateTeam = () => {
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
         setRotationFormData({
             name: rotation.name || '', team_id: rotation.team_id || '', location_id: '',
-            start_date: rotation.start_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+            start_date: rotation.start_date?.split('T')[0] || getTodayDate(),
+            end_date: rotation.end_date?.split('T')[0] || rotation.start_date?.split('T')[0] || getTodayDate(),
             interval_unit: rotation.interval_unit || 'week', interval_count: rotation.interval_count || 1,
             status: rotation.status || 'active',
             assigned_member_ids: Array.isArray(rotation.assigned_member_ids) ? rotation.assigned_member_ids.map(id => String(id)) : [],
@@ -608,6 +648,7 @@ const openCreateTeam = () => {
         const ids = Array.isArray(rotation?.assigned_member_ids) ? rotation.assigned_member_ids : [];
         return ids.map(id => userLookup[id]?.name).filter(Boolean);
     };
+    const formatDateValue = (value) => value ? String(value).split('T')[0] : '-';
     const formatEscalationTiersLabel = (value) => {
         if (!value) return 'None';
         if (Array.isArray(value)) return value.join(', ');
@@ -1066,7 +1107,8 @@ const openCreateTeam = () => {
 
         // ── ROTATIONS ─────────────────────────────────────────────────────────
         if (activePage === 'Rotations') {
-            const availableMembers = users.filter(u => u.team_id && String(u.team_id) === String(rotationFormData.team_id));            const filteredAvailableMembers = availableMembers.filter(u => {
+            const availableMembers = users.filter(u => u.team_id && String(u.team_id) === String(rotationFormData.team_id));
+            const filteredAvailableMembers = availableMembers.filter(u => {
                 const query = rotationMemberSearch.trim().toLowerCase();
                 if (!query) return true;
                 return (
@@ -1076,7 +1118,7 @@ const openCreateTeam = () => {
                 );
             });
                 // ✅ filteredRotations is INSIDE the Rotations block — safe from initial render crash
-                const filteredRotations = rotations.filter(r => {
+            const filteredRotations = rotations.filter(r => {
                 const teamName        = (r.teams?.name || '').toLowerCase();
                 const matchesSearch   = r.name.toLowerCase().includes(rotationSearchTerm.toLowerCase()) || teamName.includes(rotationSearchTerm.toLowerCase());
                 const matchesTeam     = rotationTeamFilter.length === 0 || rotationTeamFilter.includes(String(r.team_id));
@@ -1147,29 +1189,57 @@ const openCreateTeam = () => {
                             </div>
                         )}
                     </div>
-                    <div className="form-group"><label>Start Date <span style={{ color: '#e31937' }}>*</span></label><input className="enterprise-input" type="date" value={rotationFormData.start_date} onChange={e => setRotationFormData({ ...rotationFormData, start_date: e.target.value })} required /></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div className="form-group">
+                            <label>Start Date <span style={{ color: '#e31937' }}>*</span></label>
+                            <input
+                                className="enterprise-input"
+                                type="date"
+                                value={rotationFormData.start_date}
+                                onChange={e => {
+                                    const nextStartDate = e.target.value;
+                                    setRotationFormData(prev => ({
+                                        ...prev,
+                                        start_date: nextStartDate,
+                                        end_date: !prev.end_date || prev.end_date < nextStartDate ? nextStartDate : prev.end_date
+                                    }));
+                                }}
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>End Date <span style={{ color: '#e31937' }}>*</span></label>
+                            <input
+                                className="enterprise-input"
+                                type="date"
+                                min={rotationFormData.start_date || undefined}
+                                value={rotationFormData.end_date}
+                                onChange={e => setRotationFormData({ ...rotationFormData, end_date: e.target.value })}
+                                required
+                            />
+                        </div>
+                    </div>
                     <div className="form-group"><label>Notes / Description</label><textarea className="enterprise-input" rows="3" value={rotationFormData.notes} onChange={e => setRotationFormData({ ...rotationFormData, notes: e.target.value })} /></div>
                     <div className="form-group"><label>Escalation Tiers (optional)</label><textarea className="enterprise-input" rows="2" placeholder="Tier 1, Tier 2 or JSON" value={rotationFormData.escalation_tiers} onChange={e => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })} /><p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>Comma-separated list or JSON array.</p></div>
                     <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <input type="checkbox" checked={rotationFormData.allow_double_booking} onChange={e => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })} />
                         <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking (optional)</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                        <button type="submit" className="btn-primary">{editingRotation ? 'Update Rotation' : 'Save Rotation'}</button>
-                        {editingRotation && <button type="button" onClick={closeEditRotation} style={{ background: '#eee', color: '#333' }} className="btn-primary">Cancel</button>}
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                        <button type="submit" className="btn-primary" style={{ flex: 1 }}>{editingRotation ? 'Update Rotation' : 'Create Rotation'}</button>
+                        <button type="button" onClick={closeEditRotation} className="btn-cancel" style={{ flex: 1 }}>Cancel</button>
                     </div>
                 </form>
             );
             return (
-                <div className="grid-container">
-                    {!editingRotation && isRotationAdmin && (
-                        <div className="enterprise-card">
-                            <h3>New Rotation</h3>
-                            {renderRotationForm()}
-                        </div>
-                    )}
-                    <div className="enterprise-card no-padding" style={(editingRotation || !isRotationAdmin) ? { gridColumn: '1 / -1' } : {}}>
-                    {/* Rotation Filter Bar */}
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ margin: 0, color: '#111827' }}>Rotation Management</h2>
+                        {isRotationAdmin ? (
+                            <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateRotation}>+ Create Rotation</button>
+                        ) : null}
+                    </div>
+                    <div className="enterprise-card no-padding">
                     <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
                         <div style={{ flex: 2, minWidth: '180px' }}>
                             <input type="text" placeholder="Search rotation name or team..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
@@ -1215,25 +1285,26 @@ const openCreateTeam = () => {
                         )}
                     </div>
                     <table className="data-table">
-                        <thead><tr><th>Name</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Name</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>End Date</th><th>Actions</th></tr></thead>
                         <tbody>
-                        {filteredRotations.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => ( <tr key={r.id}>
+                        {filteredRotations.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => ( <tr key={r.id}>
                                                     <td><strong>{r.name}</strong></td>
                                                     <td>{r.teams?.name || 'N/A'}</td>
                                                     <td>{formatCoverageLabel(r)}</td>
                                                     <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
                                                     <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
+                                                    <td>{formatDateValue(r.end_date)}</td>
                                                     <td><button onClick={() => openViewRotation(r)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>{isRotationAdmin && <button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button>}{isRotationAdmin && <button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button>}</td>
                                                 </tr>
                                             ))}
                                             </tbody>
                                         </table>
                                     </div>
-                                    {editingRotation && (
+                                    {(showCreateRotationModal || editingRotation) && (
                                         <div className="modal-overlay" onClick={closeEditRotation}>
                                             <div className="enterprise-card" style={{ minWidth: '620px', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                                    <h2 style={{ margin: 0 }}>Edit Rotation</h2>
+                                                    <h2 style={{ margin: 0 }}>{editingRotation ? 'Edit Rotation' : 'Create Rotation'}</h2>
                                                     <button onClick={closeEditRotation} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>×</button>
                                                 </div>
                                                 {renderRotationForm()}
@@ -1253,6 +1324,7 @@ const openCreateTeam = () => {
                                                     <div className="info-box"><label>Interval</label><p>{formatIntervalLabel(viewingRotation.interval_unit, viewingRotation.interval_count || 1)}</p></div>
                                                     <div className="info-box"><label>Start Date</label><p>{viewingRotation.start_date ? viewingRotation.start_date.split('T')[0] : '—'}</p></div>
                                                     <div className="info-box"><label>Status</label><p>{viewingRotation.status || 'active'}</p></div>
+                                                    <div className="info-box"><label>End Date</label><p>{formatDateValue(viewingRotation.end_date)}</p></div>
                                                     <div className="info-box"><label>Double Booking</label><p>{viewingRotation.allow_double_booking ? 'Allowed' : 'Not allowed'}</p></div>
                                                     <div className="info-box" style={{ gridColumn: 'span 2' }}><label>Coverage</label><p>{formatCoverageLabel(viewingRotation)}</p></div>
                                                     <div className="info-box" style={{ gridColumn: 'span 2' }}>

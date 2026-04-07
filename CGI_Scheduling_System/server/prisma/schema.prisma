@@ -93,6 +93,7 @@ model rotations {
   team_id              Int?
   location_id          Int?
   start_date           DateTime               @db.Date
+  end_date             DateTime               @db.Date
   interval_unit        interval_type
   interval_count       Int?                   @default(1)
   assigned_member_ids  Json?

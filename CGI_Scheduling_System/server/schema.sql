@@ -84,6 +84,7 @@ CREATE TABLE rotations (
                            team_id INT REFERENCES teams(id) ON DELETE CASCADE,
                            location_id INT REFERENCES locations(id) ON DELETE SET NULL,
                            start_date DATE NOT NULL,
+                           end_date DATE NOT NULL,
                            interval_unit interval_type NOT NULL,
                            interval_count INT DEFAULT 1,
                            assigned_member_ids JSONB,
