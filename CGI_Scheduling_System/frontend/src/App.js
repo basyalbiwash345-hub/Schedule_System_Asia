@@ -367,8 +367,26 @@ function App() {
         const token = localStorage.getItem('token');
         try { const r = await fetch('/api/teams', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setTeams(Array.isArray(d) ? d : []); } catch { setTeams([]); }
     };
-    const fetchRoles     = async () => { try { const r = await fetch('/api/roles');     const d = await r.json(); setRoles(Array.isArray(d) ? d : []);     } catch { setRoles([]); } };
-    const fetchLocations = async () => { try { const r = await fetch('/api/locations'); const d = await r.json(); setLocations(Array.isArray(d) ? d : []); } catch { setLocations([]); } };
+    const fetchRoles = async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const r = await fetch('/api/roles', { headers: { 'Authorization': `Bearer ${token}` } });
+            const d = await r.json();
+            setRoles(Array.isArray(d) ? d : []);
+        } catch {
+            setRoles([]);
+        }
+    };
+    const fetchLocations = async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const r = await fetch('/api/locations', { headers: { 'Authorization': `Bearer ${token}` } });
+            const d = await r.json();
+            setLocations(Array.isArray(d) ? d : []);
+        } catch {
+            setLocations([]);
+        }
+    };
     const fetchRotations = async () => {
         const token = localStorage.getItem('token');
         try { const r = await fetch('/api/rotations', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); }
@@ -588,7 +606,16 @@ const openCreateTeam = () => {
         });
         setEditingTeam(team); setShowEditTeamModal(true);
     };
-    const handleTeamFieldChange = (field, value) => setTeamFormData(prev => ({ ...prev, [field]: value }));
+    const handleTeamFieldChange = (field, value) => {
+        setTeamFormData(prev => {
+            const newData = { ...prev, [field]: value };
+            // NEW: If we are updating the lead, automatically remove them from the general members list
+            if (field === 'leadId') {
+                newData.members = newData.members.filter(m => m !== String(value));
+            }
+            return newData;
+        });
+    };
     const handleSaveTeam = async (e) => {
         e.preventDefault();
         const method = editingTeam ? 'PUT' : 'POST';
@@ -684,9 +711,19 @@ const openCreateTeam = () => {
         };
         const method = isEditing ? 'PUT' : 'POST';
         const url = isEditing ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
+        const token = localStorage.getItem('token');
 
         try {
-            const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            // --- ADD THE AUTHORIZATION HEADER HERE ---
+            const r = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
             const data = await r.json().catch(() => ({}));
             if (!r.ok) {
                 showRotationPopup(
@@ -723,7 +760,13 @@ const openCreateTeam = () => {
         if (!rotationId) return;
 
         try {
-            const r = await fetch(`/api/rotations/${rotationId}`, { method: 'DELETE' });
+            // --- ADD TOKEN EXTRACTION AND HEADERS HERE ---
+            const token = localStorage.getItem('token');
+            const r = await fetch(`/api/rotations/${rotationId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
             const data = await r.json().catch(() => ({}));
             if (!r.ok) {
                 showRotationPopup('error', 'Unable to delete rotation', data.error || 'An error occurred while deleting the rotation.');
@@ -838,6 +881,15 @@ const openCreateTeam = () => {
             if (Array.isArray(members)) return members;
             try { const parsed = JSON.parse(members); return Array.isArray(parsed) ? parsed : []; }
             catch { return []; }
+        };
+
+        // --- NEW: Combine the Lead and Members for the UI Display ---
+        const getTeamDisplayMembers = (team) => {
+            const parsed = parseMembers(team.members).map(String);
+            if (team.lead_id && !parsed.includes(String(team.lead_id))) {
+                return [String(team.lead_id), ...parsed]; // Puts the lead at the front of the list
+            }
+            return parsed;
         };
 
         // ── USERS ─────────────────────────────────────────────────────────────
@@ -1065,8 +1117,7 @@ const openCreateTeam = () => {
             // ✅ filteredTeams is INSIDE the Teams block — safe from initial render crash
             const filteredTeams = teams.filter(t => {
                 const leadName      = t.lead?.name?.toLowerCase() || '';
-                const teamMemberIds = parseMembers(t.members).map(String);
-                const memberNames   = teamMemberIds.map(id => userLookup[id]?.name || '').join(' ').toLowerCase();
+                const teamMemberIds = getTeamDisplayMembers(t);                const memberNames   = teamMemberIds.map(id => userLookup[id]?.name || '').join(' ').toLowerCase();
                 const matchesSearch  = t.name.toLowerCase().includes(teamSearchTerm.toLowerCase()) || leadName.includes(teamSearchTerm.toLowerCase()) || memberNames.includes(teamSearchTerm.toLowerCase());
                 const matchesLead    = leadFilter.length === 0   || leadFilter.includes(String(t.lead_id));
                 const matchesMembers = memberFilter.length === 0 || memberFilter.some(id => teamMemberIds.includes(id));
@@ -1133,7 +1184,7 @@ const openCreateTeam = () => {
                             {filteredTeams.length === 0 ? (
                                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>No teams match these filters.</td></tr>
                             ) : filteredTeams.map(team => {
-                                const members = parseMembers(team.members);
+                                const members = getTeamDisplayMembers(team);
                                 return (
                                     <tr key={team.id}>
                                         <td><div style={{ width: '24px', height: '24px', borderRadius: '4px', backgroundColor: team.color || '#e31937', border: '1px solid #e5e7eb' }} /></td>
@@ -1208,12 +1259,15 @@ const openCreateTeam = () => {
                                                         <button type="button" onClick={() => handleTeamFieldChange('members', [])} style={{ fontSize: '0.75rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600 }}>✕ Clear All</button>
                                                         <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{teamFormData.members.length} selected</span>
                                                     </div>
-                                                    {users.filter(u => u.name.toLowerCase().includes(modalMemberSearch.toLowerCase())).map(u => (
-                                                        <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                                            <input type="checkbox" checked={teamFormData.members.includes(String(u.id))} onChange={() => { const id = String(u.id); handleTeamFieldChange('members', teamFormData.members.includes(id) ? teamFormData.members.filter(m => m !== id) : [...teamFormData.members, id]); }} />
-                                                            {u.name}
-                                                        </label>
-                                                    ))}
+                                                    {users
+                                                        .filter(u => u.name.toLowerCase().includes(modalMemberSearch.toLowerCase()))
+                                                        .filter(u => String(u.id) !== String(teamFormData.leadId)) // <-- NEW: Exclude the Team Lead
+                                                        .map(u => (
+                                                            <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                                                <input type="checkbox" checked={teamFormData.members.includes(String(u.id))} onChange={() => { const id = String(u.id); handleTeamFieldChange('members', teamFormData.members.includes(id) ? teamFormData.members.filter(m => m !== id) : [...teamFormData.members, id]); }} />
+                                                                {u.name}
+                                                            </label>
+                                                        ))}
                                                 </div>
                                             )}
                                         </div>
@@ -1237,7 +1291,7 @@ const openCreateTeam = () => {
                                     <button onClick={() => setShowViewTeamModal(false)} className="close-modal-btn">✕</button>
                                 </div>
                                 {viewingTeam && (() => {
-                                    const vMembers = parseMembers(viewingTeam.members);
+                                    const vMembers = getTeamDisplayMembers(viewingTeam);
                                     return (
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
