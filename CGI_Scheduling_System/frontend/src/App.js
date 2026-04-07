@@ -367,8 +367,26 @@ function App() {
         const token = localStorage.getItem('token');
         try { const r = await fetch('/api/teams', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setTeams(Array.isArray(d) ? d : []); } catch { setTeams([]); }
     };
-    const fetchRoles     = async () => { try { const r = await fetch('/api/roles');     const d = await r.json(); setRoles(Array.isArray(d) ? d : []);     } catch { setRoles([]); } };
-    const fetchLocations = async () => { try { const r = await fetch('/api/locations'); const d = await r.json(); setLocations(Array.isArray(d) ? d : []); } catch { setLocations([]); } };
+    const fetchRoles = async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const r = await fetch('/api/roles', { headers: { 'Authorization': `Bearer ${token}` } });
+            const d = await r.json();
+            setRoles(Array.isArray(d) ? d : []);
+        } catch {
+            setRoles([]);
+        }
+    };
+    const fetchLocations = async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const r = await fetch('/api/locations', { headers: { 'Authorization': `Bearer ${token}` } });
+            const d = await r.json();
+            setLocations(Array.isArray(d) ? d : []);
+        } catch {
+            setLocations([]);
+        }
+    };
     const fetchRotations = async () => {
         const token = localStorage.getItem('token');
         try { const r = await fetch('/api/rotations', { headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); setRotations(Array.isArray(d) ? d : []); } catch { setRotations([]); }
@@ -684,9 +702,19 @@ const openCreateTeam = () => {
         };
         const method = isEditing ? 'PUT' : 'POST';
         const url = isEditing ? `/api/rotations/${editingRotation.id}` : '/api/rotations';
+        const token = localStorage.getItem('token');
 
         try {
-            const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            // --- ADD THE AUTHORIZATION HEADER HERE ---
+            const r = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
             const data = await r.json().catch(() => ({}));
             if (!r.ok) {
                 showRotationPopup(
@@ -723,7 +751,13 @@ const openCreateTeam = () => {
         if (!rotationId) return;
 
         try {
-            const r = await fetch(`/api/rotations/${rotationId}`, { method: 'DELETE' });
+            // --- ADD TOKEN EXTRACTION AND HEADERS HERE ---
+            const token = localStorage.getItem('token');
+            const r = await fetch(`/api/rotations/${rotationId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
             const data = await r.json().catch(() => ({}));
             if (!r.ok) {
                 showRotationPopup('error', 'Unable to delete rotation', data.error || 'An error occurred while deleting the rotation.');
