@@ -291,6 +291,49 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// ── CHANGE INITIAL PASSWORD ───────────────────────────────────────────────────
+app.post('/api/auth/change-password', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+        // 1. Verify who they are
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const { currentPassword, newPassword } = req.body;
+
+        const user = await prisma.users.findUnique({
+            where: { id: decoded.id },
+            include: { user_roles: { include: { roles: true } } }
+        });
+
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // 2. Verify their temporary password is correct
+        const isMatch = await verifyStoredPassword(user.password_hash, currentPassword);
+        if (!isMatch) return res.status(400).json({ error: 'Current/Temporary password is incorrect.' });
+
+        // 3. Ensure the new password meets your security requirements
+        const pwErrors = validatePassword(newPassword);
+        if (pwErrors.length) return res.status(400).json({ error: pwErrors.join(' ') });
+
+        // 4. Update the password and remove the "must_change_password" flag
+        const newHashed = await hashPassword(newPassword);
+        const updatedUser = await prisma.users.update({
+            where: { id: user.id },
+            data: { password_hash: newHashed, must_change_password: false },
+            include: { user_roles: { include: { roles: true } } }
+        });
+
+        await logAction(user.id, 'CHANGE_PASSWORD', 'users', user.id);
+
+        // Send back the updated user profile
+        res.json(serializeAuthenticatedUser(updatedUser));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── USERS ─────────────────────────────────────────────────────────────────────
 app.get('/api/users', async (req, res) => {
     try {
