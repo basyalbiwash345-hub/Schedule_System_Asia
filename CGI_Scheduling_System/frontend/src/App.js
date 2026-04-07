@@ -1309,30 +1309,69 @@ const openCreateTeam = () => {
                     <div className="form-group">
                         <label>Assigned Members <span style={{ color: '#e31937' }}>*</span></label>
                         {availableMembers.length === 0 ? <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>{rotationFormData.team_id ? 'No members are currently available for this team.' : 'Select a team to load members.'}</p> : (
-                            <div style={{ position: 'relative' }}>
-                                <button type="button" onClick={() => setShowRotationMemberDropdown(!showRotationMemberDropdown)} style={{ width: '100%', padding: '0.65rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ position: 'relative', width: '100%' }}>
+                                <button type="button" onClick={() => setShowRotationMemberDropdown(!showRotationMemberDropdown)} style={{ width: '100%', padding: '0.65rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxSizing: 'border-box', textAlign: 'left' }}>
                                     {rotationFormData.assigned_member_ids.length === 0 ? 'Select members' : `${rotationFormData.assigned_member_ids.length} member(s) selected`}<span>{showRotationMemberDropdown ? '▲' : '▼'}</span>
                                 </button>
                                 {rotationFormData.assigned_member_ids.length > 0 && (
-                                    <p style={{ margin: '0.45rem 0 0', color: '#6b7280', fontSize: '0.78rem' }}>
-                                        {availableMembers.filter(u => rotationFormData.assigned_member_ids.includes(String(u.id))).map(u => u.name).join(', ')}
-                                    </p>
+                                    <div style={{ marginTop: '0.55rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem', padding: '0.55rem', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', boxSizing: 'border-box' }}>
+                                        {availableMembers
+                                            .filter(u => rotationFormData.assigned_member_ids.includes(String(u.id)))
+                                            .map(u => (
+                                                <span key={`rotation-member-${u.id}`} style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: '999px', padding: '0.22rem 0.6rem', fontSize: '0.76rem', color: '#4b5563', lineHeight: 1.4 }}>
+                                                    {u.name}
+                                                </span>
+                                            ))}
+                                    </div>
                                 )}
                                 {showRotationMemberDropdown && (
-                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 10px 15px rgba(0,0,0,0.1)', maxHeight: '300px', overflowY: 'auto' }}>
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 10px 15px rgba(0,0,0,0.1)', maxHeight: '300px', overflowY: 'auto', boxSizing: 'border-box' }}>
                                         <input type="text" placeholder="Search members or users..." value={rotationMemberSearch} onChange={e => setRotationMemberSearch(e.target.value)} style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '8px', boxSizing: 'border-box' }} />
-                                        <div style={{ paddingBottom: '8px', borderBottom: '1px solid #f3f4f6', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                        <div style={{ paddingBottom: '8px', borderBottom: '1px solid #f3f4f6', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             <button type="button" onClick={() => setRotationFormData({ ...rotationFormData, assigned_member_ids: [] })} style={{ fontSize: '0.75rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600 }}>✕ Clear All</button>
                                             <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{rotationFormData.assigned_member_ids.length} selected</span>
                                         </div>
                                         {filteredAvailableMembers.length === 0 ? (
                                             <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.8rem' }}>No members match this search.</p>
-                                        ) : filteredAvailableMembers.map(u => (
-                                            <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                                <input type="checkbox" checked={rotationFormData.assigned_member_ids.includes(String(u.id))} onChange={() => { const id = String(u.id); setRotationFormData(prev => ({ ...prev, assigned_member_ids: prev.assigned_member_ids.includes(id) ? prev.assigned_member_ids.filter(memberId => memberId !== id) : [...prev.assigned_member_ids, id] })); }} />
-                                                {u.name}
-                                            </label>
-                                        ))}
+                                        ) : filteredAvailableMembers.map(u => {
+                                            const isSelected = rotationFormData.assigned_member_ids.includes(String(u.id));
+                                            return (
+                                                <label
+                                                    key={u.id}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: '16px minmax(0, 1fr)',
+                                                        alignItems: 'center',
+                                                        columnGap: '0.6rem',
+                                                        padding: '0.5rem 0.4rem',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        width: '100%',
+                                                        boxSizing: 'border-box',
+                                                        borderRadius: '6px',
+                                                        background: isSelected ? '#fef2f2' : 'transparent'
+                                                    }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {
+                                                            const id = String(u.id);
+                                                            setRotationFormData(prev => ({
+                                                                ...prev,
+                                                                assigned_member_ids: prev.assigned_member_ids.includes(id)
+                                                                    ? prev.assigned_member_ids.filter(memberId => memberId !== id)
+                                                                    : [...prev.assigned_member_ids, id]
+                                                            }));
+                                                        }}
+                                                        style={{ margin: 0, width: '16px', height: '16px', justifySelf: 'center' }}
+                                                    />
+                                                    <span style={{ display: 'block', minWidth: 0, lineHeight: 1.35, color: '#374151' }}>
+                                                        {u.name}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -1344,7 +1383,7 @@ const openCreateTeam = () => {
                             {INTERVAL_PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                         {intervalPreset === 'custom' && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.6rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginTop: '0.6rem' }}>
                                 <input className="enterprise-input" type="number" min="1" value={rotationFormData.interval_count} onChange={e => setRotationFormData({ ...rotationFormData, interval_count: e.target.value })} />
                                 <select className="enterprise-input" value={rotationFormData.interval_unit} onChange={e => setRotationFormData({ ...rotationFormData, interval_unit: e.target.value })}>
                                     {INTERVAL_UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1352,7 +1391,7 @@ const openCreateTeam = () => {
                             </div>
                         )}
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
                         <div className="form-group">
                             <label>Start Date <span style={{ color: '#e31937' }}>*</span></label>
                             <input
@@ -1465,7 +1504,7 @@ const openCreateTeam = () => {
                                     </div>
                                     {(showCreateRotationModal || editingRotation) && (
                                         <div className="modal-overlay" onClick={closeEditRotation}>
-                                            <div className="enterprise-card" style={{ minWidth: '620px', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                                            <div className="enterprise-card" style={{ width: 'min(680px, calc(100vw - 2rem))', minWidth: 0, maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                                                     <h2 style={{ margin: 0 }}>{editingRotation ? 'Edit Rotation' : 'Create Rotation'}</h2>
                                                     <button onClick={closeEditRotation} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>×</button>
