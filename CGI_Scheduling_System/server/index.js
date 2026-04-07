@@ -274,7 +274,18 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
 
-        res.json({ user: serializeAuthenticatedUser(user) });
+        // 1. Extract their roles
+        const roleNames = user.user_roles?.map((ur) => ur.roles?.name).filter(Boolean) || [];
+
+        // 2. Generate a secure token for the database user
+        const token = jwt.sign(
+            { id: user.id, username: user.username, roles: roleNames },
+            JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        // 3. Send BOTH the token and the user object back to the frontend
+        res.json({ token, user: serializeAuthenticatedUser(user) });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
