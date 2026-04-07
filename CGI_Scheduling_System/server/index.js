@@ -104,8 +104,22 @@ const authorizeAdmin = (req, res, next) => {
     }
 };
 
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(401).json({ error: 'Token is not valid' });
+    }
+};
+
 // ── USE ROUTES ────────────────────────────────────────────────────────────────
-app.use('/api/rotations', rotationRoutes);
+app.use('/api/rotations', authenticateToken, rotationRoutes);
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 const parseOptionalInt = (value) => {
@@ -335,7 +349,7 @@ app.post('/api/auth/change-password', async (req, res) => {
 });
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authenticateToken,async (req, res) => {
     try {
         const users = await prisma.users.findMany({
             orderBy: { id: 'asc' },
@@ -345,7 +359,7 @@ app.get('/api/users', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:id', authenticateToken,async (req, res) => {
     try {
         const user = await prisma.users.findUnique({
             where: { id: parseInt(req.params.id) },
@@ -395,7 +409,7 @@ app.post('/api/users', authorizeAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', authorizeAdmin, async (req, res) => {
     const userId = parseInt(req.params.id);
     const { first_name, last_name, username, email, phone, location, team_id, roles } = req.body;
     const validationErrors = validateUserPayload(req.body, true);
@@ -478,7 +492,7 @@ app.delete('/api/users/:id', authorizeAdmin, async (req, res) => {
 });
 
 // ── ROLES ─────────────────────────────────────────────────────────────────────
-app.get('/api/roles', async (req, res) => {
+app.get('/api/roles', authenticateToken, async (req, res) => {
     try {
         const roles = await prisma.roles.findMany({ orderBy: { name: 'asc' } });
         res.json(roles);
@@ -494,7 +508,7 @@ const DEFAULT_ROTATION_TYPES = [
     { name: 'Cross-Team Analyst',  default_interval_unit: 'week' },
 ];
 
-app.get('/api/rotation-types', async (req, res) => {
+app.get('/api/rotation-types', authenticateToken,async (req, res) => {
     try {
         let types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } });
         if (types.length === 0) {
@@ -506,7 +520,7 @@ app.get('/api/rotation-types', async (req, res) => {
 });
 
 // ── TEAMS ─────────────────────────────────────────────────────────────────────
-app.get('/api/teams', async (req, res) => {
+app.get('/api/teams', authenticateToken, async (req, res) => {
     try {
         const teams = await prisma.teams.findMany({
             orderBy: { name: 'asc' },
@@ -551,34 +565,36 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
     const teamIdInt = parseInt(id);
 
     try {
-        // 1. Clear team_id for ANYONE currently assigned to this team
-        await prisma.users.updateMany({
-            where: { team_id: teamIdInt },
-            data: { team_id: null }
-        });
-
-        // 2. Update the team record
-        const updatedTeam = await prisma.teams.update({
-            where: { id: teamIdInt },
-            data: {
-                name,
-                color,
-                description,
-                lead_id: leadId ? parseInt(leadId) : null,
-                members: JSON.stringify(members)
-            },
-            include: { lead: true }
-        });
-
-        // 3. SYNC: Set team_id for the NEW list of members
-        if (members && members.length > 0) {
-            await prisma.users.updateMany({
-                where: { id: { in: members.map(mid => parseInt(mid)) } },
-                data: { team_id: teamIdInt }
+        await prisma.$transaction(async (tx) => {
+            // 1. Clear existing members
+            await tx.users.updateMany({
+                where: { team_id: teamIdInt },
+                data: { team_id: null }
             });
-        }
 
-        res.json(updatedTeam);
+            // 2. Update team record
+            const updatedTeam = await tx.teams.update({
+                where: { id: teamIdInt },
+                data: {
+                    name, color, description,
+                    lead_id: leadId ? parseInt(leadId) : null,
+                    members: JSON.stringify(members)
+                },
+                include: { lead: true }
+            });
+
+            // 3. Assign new members
+            if (members && members.length > 0) {
+                await tx.users.updateMany({
+                    where: { id: { in: members.map(mid => parseInt(mid)) } },
+                    data: { team_id: teamIdInt }
+                });
+            }
+        });
+
+        // Fetch the fresh team to return
+        const finalTeam = await prisma.teams.findUnique({ where: { id: teamIdInt }, include: { lead: true } });
+        res.json(finalTeam);
     } catch (err) {
         res.status(500).json({ error: 'Failed to update team.' });
     }
@@ -594,7 +610,7 @@ app.delete('/api/teams/:id', authorizeAdmin, async (req, res) => {
 });
 
 // ── LOCATIONS ─────────────────────────────────────────────────────────────────
-app.get('/api/locations', async (req, res) => {
+app.get('/api/locations', authenticateToken, async (req, res) => {
     try {
         const locations = await prisma.locations.findMany({ orderBy: { id: 'asc' } });
         res.json(locations);
