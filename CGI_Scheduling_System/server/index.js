@@ -545,10 +545,13 @@ app.post('/api/teams', authorizeAdmin, async (req, res) => {
             include: { lead: true }
         });
 
-        // 2. SYNC: Assign this new team ID to all selected users
-        if (members && members.length > 0) {
+        // 2. SYNC: Assign this new team ID to all selected users + the Lead
+        const memberIds = new Set(members ? members.map(id => parseInt(id)) : []);
+        if (leadId) memberIds.add(parseInt(leadId));
+
+        if (memberIds.size > 0) {
             await prisma.users.updateMany({
-                where: { id: { in: members.map(id => parseInt(id)) } },
+                where: { id: { in: Array.from(memberIds) } },
                 data: { team_id: newTeam.id }
             });
         }
@@ -583,10 +586,13 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
                 include: { lead: true }
             });
 
-            // 3. Assign new members
-            if (members && members.length > 0) {
-                await tx.users.updateMany({
-                    where: { id: { in: members.map(mid => parseInt(mid)) } },
+            // 3. SYNC: Set team_id for the NEW list of members + the Lead
+            const memberIds = new Set(members ? members.map(mid => parseInt(mid)) : []);
+            if (leadId) memberIds.add(parseInt(leadId));
+
+            if (memberIds.size > 0) {
+                await prisma.users.updateMany({
+                    where: { id: { in: Array.from(memberIds) } },
                     data: { team_id: teamIdInt }
                 });
             }
