@@ -770,8 +770,8 @@ const seedDefaultAdmin = async () => {
 };
 
 const seedExcelData = async () => {
-    const userCount = await prisma.users.count();
-    if (userCount > 0)
+    const teamCount = await prisma.teams.count();
+    if (teamCount > 0)
         return;
 
     const teamNames = [
