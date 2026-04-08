@@ -144,6 +144,9 @@ const Header = ({ user, onLogout, activePage, onNavigate, allowedPages = [] }) =
                 {/*</Box>*/}
 
                 {/* User Pill */}
+                <Box sx={{ flexGrow: 1 }} />
+
+                {/* 3. User Pill (Moves Right) */}
                 <Box onClick={(e) => setAnchorEl(e.currentTarget)} sx={{
                     display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer',
                     border: '1px solid #e5e7eb', borderRadius: '8px', px: 1.5, py: 0.75, flexShrink: 0,
