@@ -128,6 +128,7 @@ const parseRotationPayload = (payload) => {
         errors
     );
 
+    if (rotationTypeId === null) errors.push('Rotation type is required.');
     if (!name) errors.push('Rotation name is required.');
     if (!startDate) errors.push('Start date is required.');
     if (!endDate) errors.push('End date is required.');
@@ -163,6 +164,19 @@ const parseRotationPayload = (payload) => {
             assigned_member_ids: assignedMemberIds,
         },
     };
+};
+
+const validateRotationTypeExists = async (rotationTypeId, errors) => {
+    if (rotationTypeId === null) return;
+
+    const rotationType = await prisma.rotation_types.findUnique({
+        where: { id: rotationTypeId },
+        select: { id: true },
+    });
+
+    if (!rotationType) {
+        errors.push('Selected rotation type does not exist.');
+    }
 };
 
 const validateMembersForScope = async (
@@ -306,6 +320,17 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/types', async (req, res) => {
+    try {
+        const types = await prisma.rotation_types.findMany({
+            orderBy: { id: 'asc' },
+        });
+        res.json(types);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET ONE
 router.get('/:id', async (req, res) => {
     try {
@@ -324,6 +349,9 @@ router.get('/:id', async (req, res) => {
 // CREATE
 router.post('/', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
+    if (errors.length) return res.status(400).json({ errors });
+
+    await validateRotationTypeExists(data.rotation_type_id, errors);
     if (errors.length) return res.status(400).json({ errors });
 
     await validateMembersForScope(
@@ -350,6 +378,9 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { errors, data } = parseRotationPayload(req.body);
+    if (errors.length) return res.status(400).json({ errors });
+
+    await validateRotationTypeExists(data.rotation_type_id, errors);
     if (errors.length) return res.status(400).json({ errors });
 
     let existing;

@@ -1,8 +1,4 @@
-import React, { useState } from 'react';
-
-const ROTATION_NAME_OPTIONS = [
-    'Team-Level', 'Sub-Team', 'On-Call', 'Business Domain', 'Cross-Team Analyst'
-];
+import React, { useEffect, useState } from 'react';
 
 const INTERVAL_PRESET_OPTIONS = [
     { value: 'daily',    label: 'Daily',     unit: 'day',    count: 1 },
@@ -23,7 +19,7 @@ const getTodayDate = () => new Date().toISOString().split('T')[0];
 const buildDefaultRotationForm = () => {
     const today = getTodayDate();
     return {
-        name: '', team_id: '', location_id: '', start_date: today, end_date: today,
+        rotation_type_id: '', name: '', team_id: '', location_id: '', start_date: today, end_date: today,
         interval_unit: 'week', interval_count: 1, status: 'active', assigned_member_ids: [],
         notes: '', allow_double_booking: false, escalation_tiers: ''
     };
@@ -35,10 +31,12 @@ const DEFAULT_ROTATION_POPUP = { open: false, type: 'success', title: '', messag
 const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, showNotification, userLookup, userIdLookup }) => {
     // ── LOCAL STATE ──────────────────────────────────────────────────────────
     const [rotationFormData, setRotationFormData] = useState(buildDefaultRotationForm());
+    const [rotationTypes, setRotationTypes] = useState([]);
+    const [rotationTypesLoading, setRotationTypesLoading] = useState(false);
+    const [rotationTypesError, setRotationTypesError] = useState('');
     const [showCreateRotationModal, setShowCreateRotationModal] = useState(false);
     const [editingRotation, setEditingRotation] = useState(null);
     const [intervalPreset, setIntervalPreset] = useState('weekly');
-    const [rotationNamePreset, setRotationNamePreset] = useState('');
     const [showRotationMemberDropdown, setShowRotationMemberDropdown] = useState(false);
     const [rotationMemberSearch, setRotationMemberSearch] = useState('');
     const [viewingRotation, setViewingRotation] = useState(null);
@@ -52,6 +50,61 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
     const [rotationIntervalFilter, setRotationIntervalFilter] = useState('');
     const [showRotationTeamDropdown, setShowRotationTeamDropdown] = useState(false);
     const [rotationTeamFilterSearch, setRotationTeamFilterSearch] = useState('');
+
+    useEffect(() => {
+        let ignore = false;
+
+        const fetchRotationTypes = async () => {
+            setRotationTypesLoading(true);
+
+            try {
+                const token = localStorage.getItem('token');
+                const endpoints = ['/api/rotation-types', '/api/rotations/types', '/api/rotations/meta/types'];
+                let loadedTypes = null;
+                let lastError = new Error('Unable to load rotation types.');
+
+                for (const endpoint of endpoints) {
+                    try {
+                        const response = await fetch(endpoint, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const data = await response.json().catch(() => ([]));
+
+                        if (!response.ok) {
+                            lastError = new Error(data.error || 'Unable to load rotation types.');
+                            continue;
+                        }
+
+                        loadedTypes = Array.isArray(data) ? data : [];
+                        break;
+                    } catch (err) {
+                        lastError = err;
+                    }
+                }
+
+                if (!loadedTypes) {
+                    throw lastError;
+                }
+
+                if (ignore) return;
+
+                setRotationTypes(loadedTypes);
+                setRotationTypesError('');
+            } catch (err) {
+                if (ignore) return;
+                setRotationTypes([]);
+                setRotationTypesError(err.message || 'Unable to load rotation types.');
+            } finally {
+                if (!ignore) setRotationTypesLoading(false);
+            }
+        };
+
+        fetchRotationTypes();
+
+        return () => {
+            ignore = true;
+        };
+    }, []);
 
     // ── FORMATTERS & HELPERS ──────────────────────────────────────────────────
     const inferIntervalPreset = (unit, count) => {
@@ -77,6 +130,10 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
     };
 
     const formatRotationTeamName = (rotation) => rotation?.teams?.name || 'N/A';
+    const formatRotationTypeName = (rotation) =>
+        rotation?.rotation_types?.name ||
+        rotationTypes.find(type => String(type.id) === String(rotation?.rotation_type_id))?.name ||
+        '—';
 
     const getRotationAvailableMembers = (teamId, assignedIds = []) => {
         const assignedSet = new Set((assignedIds || []).map(id => String(id)));
@@ -106,7 +163,6 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         setRotationFormData(buildDefaultRotationForm());
         setEditingRotation(null);
         setIntervalPreset('weekly');
-        setRotationNamePreset('');
         setShowRotationMemberDropdown(false);
         setRotationMemberSearch('');
     };
@@ -143,6 +199,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         const isEditing = Boolean(editingRotation);
         const errorTitle = isEditing ? 'Unable to update rotation' : 'Unable to create rotation';
 
+        if (!rotationFormData.rotation_type_id) return showRotationPopupModal('error', errorTitle, 'Rotation type is required.');
         if (!rotationFormData.name.trim()) return showRotationPopupModal('error', errorTitle, 'Rotation name is required.');
         if (!rotationFormData.team_id) return showRotationPopupModal('error', errorTitle, 'Assigned team is required.');
         if (!rotationFormData.start_date) return showRotationPopupModal('error', errorTitle, 'Start date is required.');
@@ -152,11 +209,17 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         const assignedMembers = (rotationFormData.assigned_member_ids || []).map(id => String(id)).filter(Boolean);
         if (!assignedMembers.length) return showRotationPopupModal('error', errorTitle, 'Assign at least one member.');
 
+        const rotationTypeId = Number.parseInt(rotationFormData.rotation_type_id, 10);
         const intervalCount = Number.parseInt(rotationFormData.interval_count, 10);
+        if (Number.isNaN(rotationTypeId)) return showRotationPopupModal('error', errorTitle, 'Rotation type is invalid.');
         if (Number.isNaN(intervalCount) || intervalCount < 1) return showRotationPopupModal('error', errorTitle, 'Rotation interval must be at least 1.');
 
         const payload = {
-            ...rotationFormData, team_id: rotationFormData.team_id, location_id: null,
+            ...rotationFormData,
+            name: rotationFormData.name.trim(),
+            rotation_type_id: rotationTypeId,
+            team_id: rotationFormData.team_id,
+            location_id: null,
             assigned_member_ids: assignedMembers.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id)),
             interval_count: intervalCount
         };
@@ -218,7 +281,6 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         setShowCreateRotationModal(false);
         setEditingRotation(rotation);
         setIntervalPreset(inferIntervalPreset(rotation.interval_unit, rotation.interval_count || 1));
-        setRotationNamePreset(ROTATION_NAME_OPTIONS.includes(rotation.name) ? rotation.name : 'custom');
         setShowRotationMemberDropdown(false);
         setRotationMemberSearch('');
         closeViewRotation();
@@ -226,6 +288,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         setRotationDeleteConfirm(DEFAULT_ROTATION_DELETE_CONFIRM);
 
         setRotationFormData({
+            rotation_type_id: rotation.rotation_type_id ? String(rotation.rotation_type_id) : '',
             name: rotation.name || '', team_id: rotation.team_id || '', location_id: '',
             start_date: rotation.start_date?.split('T')[0] || getTodayDate(),
             end_date: rotation.end_date?.split('T')[0] || rotation.start_date?.split('T')[0] || getTodayDate(),
@@ -247,8 +310,10 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
     });
 
     const filteredRotations = rotations.filter(r => {
+        const query = rotationSearchTerm.toLowerCase();
         const teamName = (r.teams?.name || '').toLowerCase();
-        const matchesSearch = r.name.toLowerCase().includes(rotationSearchTerm.toLowerCase()) || teamName.includes(rotationSearchTerm.toLowerCase());
+        const rotationTypeName = formatRotationTypeName(r).toLowerCase();
+        const matchesSearch = (r.name || '').toLowerCase().includes(query) || teamName.includes(query) || rotationTypeName.includes(query);
         const matchesTeam = rotationTeamFilter.length === 0 || rotationTeamFilter.includes(String(r.team_id));
         const matchesInterval = !rotationIntervalFilter || r.interval_unit === rotationIntervalFilter;
         return matchesSearch && matchesTeam && matchesInterval;
@@ -301,7 +366,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
             <div className="enterprise-card no-padding">
                 <div style={{ display: 'flex', gap: '1rem', padding: '1rem', alignItems: 'center', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
                     <div style={{ flex: 2, minWidth: '180px' }}>
-                        <input type="text" placeholder="Search rotation name or team..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
+                        <input type="text" placeholder="Search rotation name, type, or team..." value={rotationSearchTerm} onChange={e => setRotationSearchTerm(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', boxSizing: 'border-box' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: '150px', position: 'relative' }}>
                         <button type="button" onClick={() => setShowRotationTeamDropdown(!showRotationTeamDropdown)} style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.875rem', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -335,11 +400,12 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                     )}
                 </div>
                 <table className="data-table">
-                    <thead><tr><th>Name</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>End Date</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Rotation Name</th><th>Type</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>End Date</th><th>Actions</th></tr></thead>
                     <tbody>
-                    {filteredRotations.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => (
+                    {filteredRotations.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => (
                         <tr key={r.id}>
-                            <td><strong>{r.name}</strong></td>
+                            <td><strong>{r.name || '-'}</strong></td>
+                            <td>{formatRotationTypeName(r)}</td>
                             <td>{r.teams?.name || 'N/A'}</td>
                             <td>{formatCoverageLabel(r)}</td>
                             <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
@@ -366,13 +432,18 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                         </div>
                         <form onSubmit={handleSaveRotation}>
                             <div className="form-group">
-                                <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={rotationNamePreset} onChange={e => { const v = e.target.value; setRotationNamePreset(v); setRotationFormData(prev => ({ ...prev, name: v === 'custom' ? '' : v })); }} required>
-                                    <option value="">Select rotation name</option>
-                                    {ROTATION_NAME_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-                                    <option value="custom">Custom...</option>
+                                <label>Rotation Type <span style={{ color: '#e31937' }}>*</span></label>
+                                <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData(prev => ({ ...prev, rotation_type_id: e.target.value }))} required>
+                                    <option value="">
+                                        {rotationTypesLoading ? 'Loading rotation types...' : rotationTypes.length === 0 ? 'No rotation types available' : 'Select rotation type'}
+                                    </option>
+                                    {rotationTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
                                 </select>
-                                {rotationNamePreset === 'custom' && <input className="enterprise-input" placeholder="Custom rotation name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} style={{ marginTop: '0.6rem' }} required />}
+                                {rotationTypesError && <p style={{ margin: '0.35rem 0 0', color: '#e31937', fontSize: '0.75rem' }}>{rotationTypesError}</p>}
+                            </div>
+                            <div className="form-group">
+                                <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>
+                                <input className="enterprise-input" placeholder="Enter a custom rotation name" value={rotationFormData.name} onChange={e => setRotationFormData({ ...rotationFormData, name: e.target.value })} required />
                             </div>
                             <div className="form-group">
                                 <label>Assigned Team <span style={{ color: '#e31937' }}>*</span></label>
@@ -466,7 +537,8 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                             <button onClick={closeViewRotation} className="close-modal-btn">×</button>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div className="info-box"><label>Name</label><p>{viewingRotation.name || '—'}</p></div>
+                            <div className="info-box"><label>Rotation Type</label><p>{formatRotationTypeName(viewingRotation)}</p></div>
+                            <div className="info-box"><label>Rotation Name</label><p>{viewingRotation.name || '—'}</p></div>
                             <div className="info-box"><label>Team</label><p>{formatRotationTeamName(viewingRotation)}</p></div>
                             <div className="info-box"><label>Interval</label><p>{formatIntervalLabel(viewingRotation.interval_unit, viewingRotation.interval_count || 1)}</p></div>
                             <div className="info-box"><label>Start Date</label><p>{viewingRotation.start_date ? viewingRotation.start_date.split('T')[0] : '—'}</p></div>
