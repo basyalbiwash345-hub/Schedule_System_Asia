@@ -150,7 +150,7 @@ const validatePassword = (password) => {
     return errors;
 };
 
-const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner', 'Employee'];
+const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Employee'];
 
 const getPrimaryRole = (roleNames = []) =>
     ROLE_PRIORITY.find((role) => roleNames.includes(role)) || roleNames[0] || 'Employee';
@@ -699,7 +699,6 @@ const seedRoles = async () => {
             data: [
                 { name: 'Administrator',          description: 'Full system access including user and role management.' },
                 { name: 'Team Lead / Supervisor', description: 'Manage team members, approve leave requests, and oversee schedules.' },
-                { name: 'Rotation Owner',         description: 'Create and manage rotation schedules.' },
                 { name: 'Employee',               description: 'View personal schedule and submit leave requests.' },
             ],
         });

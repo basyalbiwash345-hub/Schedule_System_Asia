@@ -49,11 +49,10 @@ const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [],
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
 const DEFAULT_ROTATION_DELETE_CONFIRM = { open: false, rotationId: null, rotationName: '' };
 const DEFAULT_ROTATION_POPUP = { open: false, type: 'success', title: '', message: '' };
-const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner', 'Employee'];
+const ROLE_PRIORITY = ['Administrator', 'Team Lead / Supervisor', 'Employee'];
 const PAGE_ACCESS_BY_ROLE = {
     'Administrator': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations', 'Roles'],
     'Team Lead / Supervisor': ['Overview', 'Matrix', 'Teams', 'Rotations'],
-    'Rotation Owner': ['Overview', 'Matrix', 'Rotations'],
     'Employee': ['Overview', 'Matrix', 'Teams', 'Users', 'Rotations'],
 };
 const PAGE_ACCESS_ALIASES = {
@@ -303,7 +302,7 @@ function App() {
     const allowedPages = getAllowedPages(currentUser?.roles || []);
     const isTeamAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
     const isUserAdmin = currentUser?.roles?.some(role => ['Administrator'].includes(role)) || false;
-    const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator', 'Rotation Owner'].includes(role)) || false;
+    const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator'].includes(role)) || false;
     const shouldLoadUsers = allowedPages.some(page => ['Users', 'Teams', 'Rotations', 'Roles'].includes(page));
     const shouldLoadTeams = allowedPages.some(page => ['Teams', 'Rotations'].includes(page));
     const shouldLoadRoles = allowedPages.some(page => ['Users', 'Roles'].includes(page));
@@ -1803,7 +1802,6 @@ const openCreateTeam = () => {
             const rolePermissions = {
                 'Administrator':          ['Full system access', 'Manage users & roles', 'Manage teams & rotations', 'View all schedules', 'Approve leave requests', 'Access audit logs'],
                 'Team Lead / Supervisor': ['Manage team members', 'Approve leave requests', 'View team schedules', 'Assign rotations'],
-                'Rotation Owner':         ['Create & manage rotations', 'Assign employees to rotations', 'View rotation schedules'],
                 'Employee':               ['View personal schedule', 'Submit leave requests', 'View team calendar', 'View teams', 'View rotations'],
             };
             return (
@@ -1813,8 +1811,7 @@ const openCreateTeam = () => {
                         {roles.length === 0 ? <div className="enterprise-card"><p style={{ color: '#9ca3af' }}>Loading roles...</p></div> : roles.map(role => {
                             const perms      = rolePermissions[role.name] || [];
                             const userCount  = users.filter(u => u.user_roles?.some(ur => ur.role_id === role.id)).length;
-                            const badgeColor = role.name === 'Administrator' ? '#e31937' : role.name === 'Team Lead / Supervisor' ? '#2563eb' : role.name === 'Rotation Owner' ? '#7c3aed' : '#059669';
-                            return (
+                            const badgeColor = role.name === 'Administrator' ? '#e31937' : role.name === 'Team Lead / Supervisor' ? '#2563eb' : '#059669';                            return (
                                 <div key={role.id} className="enterprise-card" style={{ borderTop: '3px solid ' + badgeColor }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                                         <div><h3 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>{role.name}</h3><p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: '#6b7280' }}>{role.description}</p></div>
