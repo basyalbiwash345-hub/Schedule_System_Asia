@@ -540,7 +540,6 @@ app.post('/api/teams', authorizeAdmin, async (req, res) => {
                 color,
                 description,
                 lead_id: leadId ? parseInt(leadId) : null,
-                members: JSON.stringify(members)
             },
             include: { lead: true }
         });
@@ -581,7 +580,6 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
                 data: {
                     name, color, description,
                     lead_id: leadId ? parseInt(leadId) : null,
-                    members: JSON.stringify(members)
                 },
                 include: { lead: true }
             });
@@ -892,6 +890,135 @@ const seedExcelData = async () => {
     console.log('✅ Excel employees seeded.');
 };
 
+const seedSampleRotations = async () => {
+    // 1. Check if rotations already exist so we don't double-seed
+    const rotationCount = await prisma.rotations.count();
+    if (rotationCount > 0) return;
+
+    console.log('🔄 Seeding sample rotations and schedule assignments...');
+
+    // --- NEW: Generate default Rotation Types if the database is fresh ---
+    const defaultTypes = [
+        { name: 'Team-Level',          default_interval_unit: 'week' },
+        { name: 'Sub-Team',            default_interval_unit: 'week' },
+        { name: 'On-Call',             default_interval_unit: 'day'  },
+        { name: 'Business Domain',     default_interval_unit: 'week' },
+        { name: 'Cross-Team Analyst',  default_interval_unit: 'week' }
+    ];
+    for (const typeObj of defaultTypes) {
+        // Look up using just the name string
+        const existing = await prisma.rotation_types.findFirst({ where: { name: typeObj.name } });
+
+        if (!existing) {
+            // Create using both properties from the object
+            await prisma.rotation_types.create({
+                data: {
+                    name: typeObj.name,
+                    default_interval_unit: typeObj.default_interval_unit
+                }
+            });
+        }
+    }
+
+    const rotTypes = await prisma.rotation_types.findMany();
+
+    const typeOnCall = rotTypes.find(t => t.name === 'On-Call') || rotTypes[0];
+    const typeTeam = rotTypes.find(t => t.name === 'Team-Level') || rotTypes[0];
+
+    // Helper to get a clean midnight date for today
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const nextMonth = new Date(today);
+    nextMonth.setMonth(today.getMonth() + 1);
+
+    // ── CREATE ROTATION 1: Service Desk (Weekly) ──
+    const teamSD = await prisma.teams.findFirst({ where: { name: 'Service Desk' } });
+    if (teamSD) {
+        const usersSD = await prisma.users.findMany({ where: { team_id: teamSD.id } });
+        if (usersSD.length > 0) {
+            const rotSD = await prisma.rotations.create({
+                data: {
+                    name: 'Service Desk Primary',
+                    rotation_type_id: typeTeam.id,
+                    team_id: teamSD.id,
+                    start_date: today,
+                    end_date: nextMonth,
+                    interval_unit: 'week',
+                    interval_count: 1,
+                    // Assign the first 4 users from the team
+                    assigned_member_ids: usersSD.map(u => u.id).slice(0, 4),
+                    status: 'active'
+                }
+            });
+
+            // Generate 7 days of schedule assignments to populate the Matrix View
+            for (let i = 0; i < 7; i++) {
+                const shiftStart = new Date(today);
+                shiftStart.setDate(today.getDate() + i);
+                const shiftEnd = new Date(shiftStart);
+                shiftEnd.setUTCHours(23, 59, 59, 999);
+
+                await prisma.rotation_assignments.create({
+                    data: {
+                        rotation_id: rotSD.id,
+                        user_id: usersSD[i % usersSD.length].id, // Round-robin assign users
+                        start_time: shiftStart,
+                        end_time: shiftEnd,
+                        status_code: 'w', // 'w' for Working
+                        status: 'scheduled',
+                        slot: 'full'
+                    }
+                });
+            }
+        }
+    }
+
+    // ── CREATE ROTATION 2: Ops Support (Daily On-Call) ──
+    const teamOps = await prisma.teams.findFirst({ where: { name: 'CDO FDN Ops App Support' } });
+    if (teamOps) {
+        const usersOps = await prisma.users.findMany({ where: { team_id: teamOps.id } });
+        if (usersOps.length > 0) {
+            const rotOps = await prisma.rotations.create({
+                data: {
+                    name: 'Ops Daily On-Call',
+                    rotation_type_id: typeOnCall.id,
+                    team_id: teamOps.id,
+                    start_date: today,
+                    end_date: nextMonth,
+                    interval_unit: 'day',
+                    interval_count: 1,
+                    // Assign all members of this team
+                    assigned_member_ids: usersOps.map(u => u.id),
+                    allow_double_booking: false,
+                    status: 'active'
+                }
+            });
+
+            // Generate 7 days of schedule assignments
+            for (let i = 0; i < 7; i++) {
+                const shiftStart = new Date(today);
+                shiftStart.setDate(today.getDate() + i);
+                const shiftEnd = new Date(shiftStart);
+                shiftEnd.setUTCHours(23, 59, 59, 999);
+
+                await prisma.rotation_assignments.create({
+                    data: {
+                        rotation_id: rotOps.id,
+                        user_id: usersOps[i % usersOps.length].id,
+                        start_time: shiftStart,
+                        end_time: shiftEnd,
+                        status_code: 'w',
+                        status: 'scheduled',
+                        slot: 'full'
+                    }
+                });
+            }
+        }
+    }
+
+    console.log('✅ Sample rotations and schedules seeded.');
+};
+
 // ── START SERVER ──────────────────────────────────────────────────────────────
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
@@ -913,4 +1040,6 @@ app.listen(port, async () => {
     }
 
     await seedExcelData();
+
+    await seedSampleRotations();
 });

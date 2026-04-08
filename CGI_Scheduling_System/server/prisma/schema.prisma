@@ -112,7 +112,6 @@ model teams {
   name           String       @db.VarChar(255)
   color          String?      @default("#e31937")
   lead_id        Int?
-  members        Json?
   team_role      String?      @default("Member")
   description    String?
   group_id       Int?

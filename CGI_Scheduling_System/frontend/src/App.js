@@ -498,10 +498,28 @@ function App() {
     const openViewUser = async (user) => {
         setViewUserError('');
         try {
-            const res = await fetch(`/api/users/${user.id}`);
-            if (!res.ok) { setViewUserError('User record not found.'); setViewingUser(null); setShowViewModal(true); return; }
-            setViewingUser(await res.json()); setShowViewModal(true);
-        } catch { setViewUserError('Failed to load user profile.'); setViewingUser(null); setShowViewModal(true); }
+            // 1. Get the token
+            const token = localStorage.getItem('token');
+
+            // 2. Attach the token to the fetch request headers
+            const res = await fetch(`/api/users/${user.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!res.ok) {
+                setViewUserError('User record not found.');
+                setViewingUser(null);
+                setShowViewModal(true);
+                return;
+            }
+
+            setViewingUser(await res.json());
+            setShowViewModal(true);
+        } catch {
+            setViewUserError('Failed to load user profile.');
+            setViewingUser(null);
+            setShowViewModal(true);
+        }
     };
     const closeUserModal = () => {
         setShowUserModal(false); setEditingUser(null); setUserFormSuccess(''); setUserFormErrors({});
@@ -875,21 +893,19 @@ const openCreateTeam = () => {
             );
         }
 
-        // ✅ SAFE MEMBER PARSER — handles array, JSON string, or null
-        const parseMembers = (members) => {
-            if (!members) return [];
-            if (Array.isArray(members)) return members;
-            try { const parsed = JSON.parse(members); return Array.isArray(parsed) ? parsed : []; }
-            catch { return []; }
-        };
-
-        // --- NEW: Combine the Lead and Members for the UI Display ---
+        // --- RELATIONAL APPROACH: Calculate members dynamically ---
         const getTeamDisplayMembers = (team) => {
-            const parsed = parseMembers(team.members).map(String);
-            if (team.lead_id && !parsed.includes(String(team.lead_id))) {
-                return [String(team.lead_id), ...parsed]; // Puts the lead at the front of the list
+            // 1. Filter the global users list for anyone matching this team's ID
+            const memberIds = users
+                .filter(u => String(u.team_id) === String(team.id))
+                .map(u => String(u.id));
+
+            // 2. Ensure the Team Lead is included at the front of the list
+            if (team.lead_id && !memberIds.includes(String(team.lead_id))) {
+                return [String(team.lead_id), ...memberIds];
             }
-            return parsed;
+
+            return memberIds;
         };
 
         // ── USERS ─────────────────────────────────────────────────────────────
@@ -975,17 +991,63 @@ const openCreateTeam = () => {
                                 <tr key={u.id}>
                                     <td>{u.first_name}</td>
                                     <td>{u.last_name}</td>
-                                    <td style={{ color: '#6b7280' }}>{u.username || '—'}</td>
+                                    <td style={{color: '#6b7280'}}>{u.username || '—'}</td>
                                     <td>{u.email}</td>
-                                    <td style={{ color: '#6b7280' }}>{u.phone || '—'}</td>
-                                    <td style={{ color: '#6b7280' }}>{u.location || '—'}</td>
+                                    <td style={{color: '#6b7280'}}>{u.phone || '—'}</td>
+                                    <td style={{color: '#6b7280'}}>{u.location || '—'}</td>
                                     <td>{teams.find(t => t.id === u.team_id)?.name || '—'}</td>
-                                    <td>{u.user_roles?.map(ur => <span key={ur.role_id} style={{ display: 'inline-block', background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, marginRight: '4px' }}>{ur.roles?.name}</span>)}</td>
-                                    <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
+                                    <td>{u.user_roles?.map(ur => <span key={ur.role_id} style={{
+                                        display: 'inline-block',
+                                        background: '#fef2f2',
+                                        color: '#e31937',
+                                        borderRadius: '12px',
+                                        padding: '2px 8px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        marginRight: '4px'
+                                    }}>{ur.roles?.name}</span>)}</td>
+                                    <td><span style={{
+                                        background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6',
+                                        color: u.status === 'active' ? '#065f46' : '#6b7280',
+                                        borderRadius: '12px',
+                                        padding: '2px 10px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600
+                                    }}>{u.status}</span></td>
                                     <td>
-                                        <button onClick={() => openViewUser(u)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
-                                        {isUserAdmin && <button onClick={() => openEditUser(u)} style={{ marginRight: '0.5rem' }}>Edit</button>}
-                                        {isUserAdmin && <button onClick={() => handleDeleteUser(u)} style={{ color: 'red' }}>Delete</button>}
+                                        <button onClick={() => openViewUser(u)} style={{
+                                            marginRight: '0.5rem',
+                                            background: '#f0f9ff',
+                                            color: '#0369a1',
+                                            border: '1px solid #bae6fd',
+                                            borderRadius: '4px',
+                                            padding: '3px 10px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600
+                                        }}>View
+                                        </button>
+                                        {isUserAdmin && <button onClick={() => openEditUser(u)} style={{
+                                            marginRight: '0.5rem',
+                                            background: '#f3f4f6',
+                                            color: '#374151',
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: '4px',
+                                            padding: '3px 10px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600
+                                        }}>Edit</button>}
+                                        {isUserAdmin && <button onClick={() => handleDeleteUser(u)} style={{
+                                            background: '#fef2f2',
+                                            color: '#e31937',
+                                            border: '1px solid #fecaca',
+                                            borderRadius: '4px',
+                                            padding: '3px 10px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600
+                                        }}>Delete</button>}
                                     </td>
                                 </tr>
                             ))}
@@ -996,13 +1058,20 @@ const openCreateTeam = () => {
                     {/* View User Modal */}
                     {showViewModal && (
                         <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
-                            <div className="modal-content" style={{ minWidth: '550px' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h2 style={{ margin: 0 }}>User Profile Details</h2>
-                                    <button onClick={() => setShowViewModal(false)} className="close-modal-btn">✕</button>
+                            <div className="modal-content" style={{minWidth: '550px'}}
+                                 onClick={e => e.stopPropagation()}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <h2 style={{margin: 0}}>User Profile Details</h2>
+                                    <button onClick={() => setShowViewModal(false)} className="close-modal-btn">✕
+                                    </button>
                                 </div>
                                 {viewingUser && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                         <div className="info-box"><label>First Name</label><p>{viewingUser.first_name}</p></div>
                                         <div className="info-box"><label>Last Name</label><p>{viewingUser.last_name}</p></div>
                                         <div className="info-box"><label>Username</label><p>@{viewingUser.username || '—'}</p></div>
@@ -1187,23 +1256,89 @@ const openCreateTeam = () => {
                                 const members = getTeamDisplayMembers(team);
                                 return (
                                     <tr key={team.id}>
-                                        <td><div style={{ width: '24px', height: '24px', borderRadius: '4px', backgroundColor: team.color || '#e31937', border: '1px solid #e5e7eb' }} /></td>
+                                        <td>
+                                            <div style={{
+                                                width: '24px',
+                                                height: '24px',
+                                                borderRadius: '4px',
+                                                backgroundColor: team.color || '#e31937',
+                                                border: '1px solid #e5e7eb'
+                                            }}/>
+                                        </td>
                                         <td><strong>{team.name}</strong></td>
                                         <td>{team.lead?.name || '—'}</td>
-                                        <td style={{ minWidth: '180px' }}>
-                                            <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{members.length} Members</div>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                                {members.slice(0, 3).map(id => <span key={id} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280', borderRadius: '4px', padding: '1px 6px', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{userLookup[id]?.name ? userLookup[id].name.split(' ')[0] : 'User'}</span>)}
-                                                {members.length > 3 && <button onClick={() => openViewTeam(team)} style={{ fontSize: '0.7rem', color: '#0369a1', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', fontWeight: 500 }}>+{members.length - 3} more</button>}
+                                        <td style={{minWidth: '180px'}}>
+                                            <div style={{
+                                                fontWeight: 600,
+                                                marginBottom: '6px',
+                                                fontSize: '0.85rem'
+                                            }}>{members.length} Members
+                                            </div>
+                                            <div style={{display: 'flex', flexWrap: 'wrap', gap: '4px'}}>
+                                                {members.slice(0, 3).map(id => <span key={id} style={{
+                                                    background: '#f9fafb',
+                                                    border: '1px solid #e5e7eb',
+                                                    color: '#6b7280',
+                                                    borderRadius: '4px',
+                                                    padding: '1px 6px',
+                                                    fontSize: '0.7rem',
+                                                    whiteSpace: 'nowrap'
+                                                }}>{userLookup[id]?.name ? userLookup[id].name.split(' ')[0] : 'User'}</span>)}
+                                                {members.length > 3 && <button onClick={() => openViewTeam(team)}
+                                                                               style={{
+                                                                                   fontSize: '0.7rem',
+                                                                                   color: '#0369a1',
+                                                                                   background: 'none',
+                                                                                   border: 'none',
+                                                                                   padding: 0,
+                                                                                   cursor: 'pointer',
+                                                                                   textDecoration: 'underline',
+                                                                                   fontWeight: 500
+                                                                               }}>+{members.length - 3} more</button>}
                                             </div>
                                         </td>
-                                        <td style={{ color: '#6b7280', fontSize: '0.85rem' }}>{team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}</td>
+                                        <td style={{
+                                            color: '#6b7280',
+                                            fontSize: '0.85rem'
+                                        }}>{team.description ? (team.description.substring(0, 50) + (team.description.length > 50 ? '...' : '')) : '—'}</td>
                                         <td>
-                                            <button onClick={() => openViewTeam(team)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
+                                            <button onClick={() => openViewTeam(team)} style={{
+                                                marginRight: '0.5rem',
+                                                background: '#f0f9ff',
+                                                color: '#0369a1',
+                                                border: '1px solid #bae6fd',
+                                                borderRadius: '4px',
+                                                padding: '3px 10px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 600
+                                            }}>View
+                                            </button>
                                             {isTeamAdmin ? (
                                                 <>
-                                                    <button onClick={() => openEditTeam(team)} style={{ marginRight: '0.5rem' }}>Edit</button>
-                                                    <button onClick={() => handleDeleteTeam(team.id)} style={{ color: 'red' }}>Delete</button>
+                                                    <button onClick={() => openEditTeam(team)} style={{
+                                                        marginRight: '0.5rem',
+                                                        background: '#f3f4f6',
+                                                        color: '#374151',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '4px',
+                                                        padding: '3px 10px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 600
+                                                    }}>Edit
+                                                    </button>
+                                                    <button onClick={() => handleDeleteTeam(team.id)} style={{
+                                                        background: '#fef2f2',
+                                                        color: '#e31937',
+                                                        border: '1px solid #fecaca',
+                                                        borderRadius: '4px',
+                                                        padding: '3px 10px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 600
+                                                    }}>Delete
+                                                    </button>
                                                 </>
                                             ) : null}
                                         </td>
@@ -1217,13 +1352,22 @@ const openCreateTeam = () => {
                     {/* Create/Edit Team Modal */}
                     {(showCreateTeamModal || showEditTeamModal) && (
                         <div className="modal-overlay" onClick={closeTeamModal}>
-                            <div className="enterprise-card" style={{ minWidth: '550px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h2 style={{ margin: 0 }}>{editingTeam ? 'Edit Team' : 'Create New Team'}</h2>
+                            <div className="enterprise-card"
+                                 style={{minWidth: '550px', maxHeight: '90vh', overflowY: 'auto'}}
+                                 onClick={e => e.stopPropagation()}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <h2 style={{margin: 0}}>{editingTeam ? 'Edit Team' : 'Create New Team'}</h2>
                                     <button onClick={closeTeamModal} className="close-modal-btn">✕</button>
                                 </div>
                                 <form onSubmit={handleSaveTeam}>
-                                    <div style={fieldWrap}><label style={labelStyle}>Team Name</label><input style={inputStyle()} value={teamFormData.name} onChange={e => handleTeamFieldChange('name', e.target.value)} required /></div>
+                                    <div style={fieldWrap}><label style={labelStyle}>Team Name</label><input
+                                        style={inputStyle()} value={teamFormData.name}
+                                        onChange={e => handleTeamFieldChange('name', e.target.value)} required /></div>
                                     <div style={fieldWrap}>
                                         <label style={labelStyle}>Team Color</label>
                                         <input type="color" style={{ display: 'block', marginBottom: '1rem', width: '60px', height: '40px', border: 'none', background: 'none' }} value={teamFormData.color} onChange={e => handleTeamFieldChange('color', e.target.value)} />
@@ -1543,25 +1687,73 @@ const openCreateTeam = () => {
                     <table className="data-table">
                         <thead><tr><th>Name</th><th>Team</th><th>Coverage</th><th>Interval</th><th>Start Date</th><th>End Date</th><th>Actions</th></tr></thead>
                         <tbody>
-                        {filteredRotations.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => ( <tr key={r.id}>
-                                                    <td><strong>{r.name}</strong></td>
-                                                    <td>{r.teams?.name || 'N/A'}</td>
-                                                    <td>{formatCoverageLabel(r)}</td>
-                                                    <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
-                                                    <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
-                                                    <td>{formatDateValue(r.end_date)}</td>
-                                                    <td><button onClick={() => openViewRotation(r)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>{isRotationAdmin && <button onClick={() => openEditRotation(r)} style={{ marginRight: '0.5rem' }}>Edit</button>}{isRotationAdmin && <button onClick={() => handleDeleteRotation(r)} style={{ color: 'red' }}>Delete</button>}</td>
-                                                </tr>
-                                            ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {(showCreateRotationModal || editingRotation) && (
-                                        <div className="modal-overlay" onClick={closeEditRotation}>
-                                            <div className="enterprise-card" style={{ width: 'min(680px, calc(100vw - 2rem))', minWidth: 0, maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                                    <h2 style={{ margin: 0 }}>{editingRotation ? 'Edit Rotation' : 'Create Rotation'}</h2>
-                                                    <button onClick={closeEditRotation} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>×</button>
+                        {filteredRotations.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No rotations match these filters.</td></tr> : filteredRotations.map(r => (
+                            <tr key={r.id}>
+                                <td><strong>{r.name}</strong></td>
+                                <td>{r.teams?.name || 'N/A'}</td>
+                                <td>{formatCoverageLabel(r)}</td>
+                                <td>{formatIntervalLabel(r.interval_unit, r.interval_count || 1)}</td>
+                                <td>{r.start_date ? r.start_date.split('T')[0] : '—'}</td>
+                                <td>{formatDateValue(r.end_date)}</td>
+                                <td>
+                                    <button onClick={() => openViewRotation(r)} style={{
+                                        marginRight: '0.5rem',
+                                        background: '#f0f9ff',
+                                        color: '#0369a1',
+                                        border: '1px solid #bae6fd',
+                                        borderRadius: '4px',
+                                        padding: '3px 10px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600
+                                    }}>View
+                                    </button>
+                                    {isRotationAdmin && <button onClick={() => openEditRotation(r)} style={{
+                                        marginRight: '0.5rem',
+                                        background: '#f3f4f6',
+                                        color: '#374151',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '4px',
+                                        padding: '3px 10px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600
+                                    }}>Edit</button>}
+                                    {isRotationAdmin && <button onClick={() => handleDeleteRotation(r)} style={{
+                                        background: '#fef2f2',
+                                        color: '#e31937',
+                                        border: '1px solid #fecaca',
+                                        borderRadius: '4px',
+                                        padding: '3px 10px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600
+                                    }}>Delete</button>}
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                    </div>
+                    {(showCreateRotationModal || editingRotation) && (
+                        <div className="modal-overlay" onClick={closeEditRotation}>
+                            <div className="enterprise-card" style={{
+                                width: 'min(680px, calc(100vw - 2rem))',
+                                minWidth: 0,
+                                maxWidth: '680px',
+                                maxHeight: '90vh',
+                                overflowY: 'auto'
+                            }} onClick={e => e.stopPropagation()}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <h2 style={{margin: 0}}>{editingRotation ? 'Edit Rotation' : 'Create Rotation'}</h2>
+                                    <button onClick={closeEditRotation} style={{
+                                        background: 'none',
+                                        border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#6b7280' }}>×</button>
                                                 </div>
                                                 {renderRotationForm()}
                                             </div>
