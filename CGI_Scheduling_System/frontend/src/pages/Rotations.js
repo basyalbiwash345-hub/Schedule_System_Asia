@@ -139,7 +139,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         const assignedSet = new Set((assignedIds || []).map(id => String(id)));
         return users.filter(user => {
             const isAssigned = assignedSet.has(String(user.id));
-            const isOnSelectedTeam = user.team_id && String(user.team_id) === String(teamId);
+            const isOnSelectedTeam = user.team_memberships?.some(t => String(t.id) === String(teamId));
             return isAssigned || isOnSelectedTeam;
         });
     };

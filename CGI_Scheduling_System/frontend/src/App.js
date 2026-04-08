@@ -233,9 +233,9 @@ function App() {
 
         // --- RELATIONAL APPROACH: Calculate members dynamically ---
         const getTeamDisplayMembers = (team) => {
-            // 1. Filter the global users list for anyone matching this team's ID
+            // 1. Filter the global users list for anyone who has this team in their memberships array
             const memberIds = users
-                .filter(u => String(u.team_id) === String(team.id))
+                .filter(u => u.team_memberships?.some(tm => String(tm.id) === String(team.id)))
                 .map(u => String(u.id));
 
             // 2. Ensure the Team Lead is included at the front of the list

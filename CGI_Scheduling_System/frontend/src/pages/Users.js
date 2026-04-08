@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
-const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_id: '', roles: [], password: '' };
+// CHANGED: team_id is now team_ids array
+const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_ids: [], roles: [], password: '' };
 
 const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNotification }) => {
     // ── LOCAL STATE ──────────────────────────────────────────────────────────
@@ -14,7 +15,6 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
     const [viewUserError, setViewUserError] = useState('');
     const [deleteConfirm, setDeleteConfirm] = useState({ open: false, user: null });
 
-    // Filters & Dropdowns
     const [searchTerm, setSearchTerm] = useState('');
     const [teamFilter, setTeamFilter] = useState([]);
     const [roleFilter, setRoleFilter] = useState([]);
@@ -38,7 +38,12 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
 
     const openEditUser = (user) => {
         setEditingUser(user);
-        setUserForm({ first_name: user.first_name || '', last_name: user.last_name || '', username: user.username || '', email: user.email || '', phone: user.phone || '', location: user.location || '', team_id: user.team_id || '', roles: user.user_roles?.map(ur => ur.role_id) || [], password: '' });
+        setUserForm({
+            first_name: user.first_name || '', last_name: user.last_name || '', username: user.username || '',
+            email: user.email || '', phone: user.phone || '', location: user.location || '',
+            team_ids: user.team_memberships?.map(t => String(t.id)) || [], // CHANGED: Load array of IDs
+            roles: user.user_roles?.map(ur => ur.role_id) || [], password: ''
+        });
         setUserFormErrors({}); setUserFormSuccess(''); setShowUserModal(true);
     };
 
@@ -114,10 +119,9 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
 
     // ── RENDER HELPERS ────────────────────────────────────────────────────────
     const filteredUsers = users.filter(u => {
-        const userTeam = teams.find(t => t.id === u.team_id);
-        const teamName = userTeam ? userTeam.name.toLowerCase() : '';
-        const matchesSearch = u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase()) || (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase())) || teamName.includes(searchTerm.toLowerCase());
-        const matchesTeam = teamFilter.length === 0 || teamFilter.includes(String(u.team_id));
+        const teamNames = u.team_memberships?.map(t => t.name.toLowerCase()).join(' ') || '';
+        const matchesSearch = u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase()) || (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase())) || teamNames.includes(searchTerm.toLowerCase());
+        const matchesTeam = teamFilter.length === 0 || u.team_memberships?.some(t => teamFilter.includes(String(t.id)));
         const matchesRole = roleFilter.length === 0 || u.user_roles?.some(ur => roleFilter.includes(String(ur.role_id)));
         const matchesStatus = !statusFilter || u.status === statusFilter;
         return matchesSearch && matchesTeam && matchesStatus && matchesRole;
@@ -147,13 +151,11 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                 {isUserAdmin ? <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateUser}>+ Create User</button> : null}
             </div>
 
-            {/* Search & Filter Bar */}
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'flex-end', background: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                 <div style={{ flex: 2 }}>
                     <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Search</label>
                     <input type="text" placeholder="Search name, email, or username..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle(), marginBottom: 0 }} />
                 </div>
-                {/* Team Multi-Select */}
                 <div style={{ flex: 1, position: 'relative' }}>
                     <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Teams</label>
                     <button type="button" onClick={() => setShowTeamDropdown(!showTeamDropdown)} style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -172,7 +174,6 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                         </div>
                     )}
                 </div>
-                {/* Role Multi-Select */}
                 <div style={{ flex: 1, position: 'relative' }}>
                     <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Roles</label>
                     <button type="button" onClick={() => setShowRoleDropdown(!showRoleDropdown)} style={{ ...inputStyle(), textAlign: 'left', background: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -190,7 +191,6 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                         </div>
                     )}
                 </div>
-                {/* Status Filter */}
                 <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Status</label>
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle(), marginBottom: 0 }}>
@@ -204,7 +204,7 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
             <div className="enterprise-card no-padding">
                 <table className="data-table">
                     <thead>
-                    <tr><th>First Name</th><th>Last Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Location</th><th>Assigned Team</th><th>Roles</th><th>Status</th><th>Actions</th></tr>
+                    <tr><th>First Name</th><th>Last Name</th><th>Username</th><th>Email</th><th>Phone</th><th>Location</th><th>Assigned Teams</th><th>Roles</th><th>Status</th><th>Actions</th></tr>
                     </thead>
                     <tbody>
                     {filteredUsers.length === 0 ? (
@@ -217,7 +217,7 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                             <td>{u.email}</td>
                             <td style={{color: '#6b7280'}}>{u.phone || '—'}</td>
                             <td style={{color: '#6b7280'}}>{u.location || '—'}</td>
-                            <td>{teams.find(t => t.id === u.team_id)?.name || '—'}</td>
+                            <td>{u.team_memberships?.length > 0 ? u.team_memberships.map(t => t.name).join(', ') : '—'}</td>
                             <td>{u.user_roles?.map(ur => <span key={ur.role_id} style={{ display: 'inline-block', background: '#fef2f2', color: '#e31937', borderRadius: '12px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, marginRight: '4px' }}>{ur.roles?.name}</span>)}</td>
                             <td><span style={{ background: u.status === 'active' ? '#ecfdf5' : '#f3f4f6', color: u.status === 'active' ? '#065f46' : '#6b7280', borderRadius: '12px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 600 }}>{u.status}</span></td>
                             <td>
@@ -248,7 +248,7 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                                 <div className="info-box"><label>Phone</label><p>{viewingUser.phone || '—'}</p></div>
                                 <div className="info-box"><label>Location</label><p>{viewingUser.location || '—'}</p></div>
                                 <div className="info-box"><label>Status</label><span className={`status-pill ${viewingUser.status}`}>{viewingUser.status}</span></div>
-                                <div className="info-box"><label>Assigned Team</label><p>{teams.find(t => t.id === viewingUser.team_id)?.name || 'Unassigned'}</p></div>
+                                <div className="info-box"><label>Assigned Teams</label><p>{viewingUser.team_memberships?.length > 0 ? viewingUser.team_memberships.map(t => t.name).join(', ') : 'Unassigned'}</p></div>
                                 <div className="info-box" style={{ gridColumn: 'span 2' }}>
                                     <label>Assigned Roles</label>
                                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
@@ -303,18 +303,24 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
                                     </div>
                                 </div>
                             </div>
+                            {/* CHANGED: Team selection is now a Multi-Select Checkbox list */}
                             <div style={fieldWrap}>
-                                <label style={labelStyle}>Assigned Team</label>
+                                <label style={labelStyle}>Assigned Teams</label>
                                 <div style={{ position: 'relative' }}>
                                     <button type="button" onClick={() => setShowModalTeamDropdown(!showModalTeamDropdown)} style={{ ...inputStyle(), textAlign: 'left', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        {userForm.team_id ? (teams.find(t => String(t.id) === String(userForm.team_id))?.name) : 'Select a team'}<span>{showModalTeamDropdown ? '▲' : '▼'}</span>
+                                        {userForm.team_ids.length === 0 ? 'Select teams' : `${userForm.team_ids.length} team(s) selected`}<span>{showModalTeamDropdown ? '▲' : '▼'}</span>
                                     </button>
                                     {showModalTeamDropdown && (
                                         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 115, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '0.5rem', boxShadow: '0 10px 15px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto' }}>
                                             <input type="text" placeholder="Search teams..." value={modalTeamSearch} onChange={e => setModalTeamSearch(e.target.value)} style={{ ...inputStyle(), marginBottom: '8px', padding: '0.4rem', fontSize: '0.8rem' }} />
-                                            <div onClick={() => { handleUserFieldChange('team_id', ''); setShowModalTeamDropdown(false); }} style={{ padding: '8px', cursor: 'pointer', fontSize: '0.85rem', color: '#9ca3af', fontStyle: 'italic' }}>None (Unassigned)</div>
+                                            <div style={{ paddingBottom: '8px', borderBottom: '1px solid #f3f4f6', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                                <button type="button" onClick={() => handleUserFieldChange('team_ids', [])} style={{ fontSize: '0.75rem', color: '#e31937', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600 }}>✕ Clear All</button>
+                                            </div>
                                             {teams.filter(t => t.name.toLowerCase().includes(modalTeamSearch.toLowerCase())).map(t => (
-                                                <div key={t.id} onClick={() => { handleUserFieldChange('team_id', t.id); setShowModalTeamDropdown(false); setModalTeamSearch(''); }} style={{ padding: '8px', cursor: 'pointer', fontSize: '0.85rem', borderRadius: '4px', background: String(userForm.team_id) === String(t.id) ? '#fef2f2' : 'transparent' }}>{t.name}</div>
+                                                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                                    <input type="checkbox" checked={userForm.team_ids.includes(String(t.id))} onChange={() => { const id = String(t.id); handleUserFieldChange('team_ids', userForm.team_ids.includes(id) ? userForm.team_ids.filter(tid => tid !== id) : [...userForm.team_ids, id]); }} />
+                                                    {t.name}
+                                                </label>
                                             ))}
                                         </div>
                                     )}
