@@ -302,8 +302,8 @@ function App() {
     const [notification,   setNotification]   = useState({ show: false, message: '', type: 'success' });
     const allowedPages = getAllowedPages(currentUser?.roles || []);
     const isTeamAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
-    const isUserAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor'].includes(role)) || false;
-    const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator', 'Team Lead / Supervisor', 'Rotation Owner'].includes(role)) || false;
+    const isUserAdmin = currentUser?.roles?.some(role => ['Administrator'].includes(role)) || false;
+    const isRotationAdmin = currentUser?.roles?.some(role => ['Administrator', 'Rotation Owner'].includes(role)) || false;
     const shouldLoadUsers = allowedPages.some(page => ['Users', 'Teams', 'Rotations', 'Roles'].includes(page));
     const shouldLoadTeams = allowedPages.some(page => ['Teams', 'Rotations'].includes(page));
     const shouldLoadRoles = allowedPages.some(page => ['Users', 'Roles'].includes(page));
