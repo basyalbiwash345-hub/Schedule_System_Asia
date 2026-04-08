@@ -44,12 +44,22 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
 
     const openEditTeam = (team) => {
         if (!isTeamAdmin) { showNotification('Employees cannot edit teams. Contact an administrator.', 'error'); return; }
+
+        // NEW: Dynamically calculate current members based on the relational database
+        // We filter out the lead_id so they don't accidentally appear in the standard members checkbox list
+        const allCurrentMembers = getTeamDisplayMembers(team);
+        const standardMembers = allCurrentMembers.filter(id => String(id) !== String(team.lead_id));
+
         setTeamFormData({
-            name: team.name, color: team.color || '#e31937', leadId: team.lead_id || '',
-            members: Array.isArray(team.members) ? team.members : team.members ? JSON.parse(team.members) : [],
+            name: team.name,
+            color: team.color || '#e31937',
+            leadId: team.lead_id || '',
+            members: standardMembers, // Load the dynamically calculated members here!
             description: team.description || ''
         });
-        setEditingTeam(team); setShowEditTeamModal(true);
+
+        setEditingTeam(team);
+        setShowEditTeamModal(true);
     };
 
     const handleTeamFieldChange = (field, value) => {
@@ -263,6 +273,17 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
                                             {users
                                                 .filter(u => u.name.toLowerCase().includes(modalMemberSearch.toLowerCase()))
                                                 .filter(u => String(u.id) !== String(teamFormData.leadId))
+                                                // NEW: Sort selected members to the top, then alphabetically
+                                                .sort((a, b) => {
+                                                    const aSelected = teamFormData.members.includes(String(a.id));
+                                                    const bSelected = teamFormData.members.includes(String(b.id));
+
+                                                    if (aSelected && !bSelected) return -1; // Move 'a' up
+                                                    if (!aSelected && bSelected) return 1;  // Move 'b' up
+
+                                                    // If both are selected or both are unselected, sort alphabetically by name
+                                                    return (a.name || '').localeCompare(b.name || '');
+                                                })
                                                 .map(u => (
                                                     <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
                                                         <input type="checkbox" checked={teamFormData.members.includes(String(u.id))} onChange={() => { const id = String(u.id); handleTeamFieldChange('members', teamFormData.members.includes(id) ? teamFormData.members.filter(m => m !== id) : [...teamFormData.members, id]); }} />

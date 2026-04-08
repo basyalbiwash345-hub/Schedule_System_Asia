@@ -533,13 +533,13 @@ app.get('/api/teams', authenticateToken, async (req, res) => {
 app.post('/api/teams', authorizeAdmin, async (req, res) => {
     const { name, color, leadId, members, description } = req.body;
     try {
-        // 1. Create the team first
+        // 1. Create the team first (Removed the JSON members column)
         const newTeam = await prisma.teams.create({
             data: {
                 name,
                 color,
                 description,
-                lead_id: leadId ? parseInt(leadId) : null,
+                lead_id: leadId ? parseInt(leadId) : null
             },
             include: { lead: true }
         });
@@ -557,6 +557,7 @@ app.post('/api/teams', authorizeAdmin, async (req, res) => {
 
         res.json(newTeam);
     } catch (err) {
+        console.error('Team creation error:', err);
         res.status(500).json({ error: 'Failed to create team.' });
     }
 });
@@ -568,18 +569,18 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
 
     try {
         await prisma.$transaction(async (tx) => {
-            // 1. Clear existing members
+            // 1. Clear existing members using tx
             await tx.users.updateMany({
                 where: { team_id: teamIdInt },
                 data: { team_id: null }
             });
 
-            // 2. Update team record
+            // 2. Update team record (Removed the JSON members column)
             const updatedTeam = await tx.teams.update({
                 where: { id: teamIdInt },
                 data: {
                     name, color, description,
-                    lead_id: leadId ? parseInt(leadId) : null,
+                    lead_id: leadId ? parseInt(leadId) : null
                 },
                 include: { lead: true }
             });
@@ -589,7 +590,8 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
             if (leadId) memberIds.add(parseInt(leadId));
 
             if (memberIds.size > 0) {
-                await prisma.users.updateMany({
+                // FIXED: Changed from prisma.users to tx.users to stay inside transaction
+                await tx.users.updateMany({
                     where: { id: { in: Array.from(memberIds) } },
                     data: { team_id: teamIdInt }
                 });
@@ -600,6 +602,7 @@ app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
         const finalTeam = await prisma.teams.findUnique({ where: { id: teamIdInt }, include: { lead: true } });
         res.json(finalTeam);
     } catch (err) {
+        console.error('Team update error:', err);
         res.status(500).json({ error: 'Failed to update team.' });
     }
 });
