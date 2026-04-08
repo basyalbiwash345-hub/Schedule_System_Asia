@@ -131,17 +131,17 @@ const Header = ({ user, onLogout, activePage, onNavigate, allowedPages = [] }) =
                     ))}
                 </Box>
 
-                {/* Search */}
-                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', px: 2 }}>
-                    <Box sx={{
-                        display: 'flex', alignItems: 'center', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb',
-                        borderRadius: '8px', px: 2, py: 0.5, width: '100%', maxWidth: 400,
-                        '&:focus-within': { borderColor: '#e31937', backgroundColor: '#fff' },
-                    }}>
-                        <SearchIcon sx={{ color: '#9ca3af', fontSize: '1.1rem', mr: 1 }} />
-                        <InputBase placeholder="Search employees or schedules..." sx={{ fontSize: '0.875rem', width: '100%', color: '#111827' }} />
-                    </Box>
-                </Box>
+                {/*/!* Search *!/*/}
+                {/*<Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', px: 2 }}>*/}
+                {/*    <Box sx={{*/}
+                {/*        display: 'flex', alignItems: 'center', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb',*/}
+                {/*        borderRadius: '8px', px: 2, py: 0.5, width: '100%', maxWidth: 400,*/}
+                {/*        '&:focus-within': { borderColor: '#e31937', backgroundColor: '#fff' },*/}
+                {/*    }}>*/}
+                {/*        <SearchIcon sx={{ color: '#9ca3af', fontSize: '1.1rem', mr: 1 }} />*/}
+                {/*        <InputBase placeholder="Search employees or schedules..." sx={{ fontSize: '0.875rem', width: '100%', color: '#111827' }} />*/}
+                {/*    </Box>*/}
+                {/*</Box>*/}
 
                 {/* User Pill */}
                 <Box onClick={(e) => setAnchorEl(e.currentTarget)} sx={{

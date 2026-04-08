@@ -44,6 +44,7 @@ const validateRotationPayload = (payload) => {
             : payload.escalation_tiers)
         : null;
 
+    if (rotationTypeId === null) errors.push('Rotation type is required.');
     if (!name) errors.push('Rotation name is required.');
     if (!startDate) errors.push('Start date is required.');
     if (!endDate) errors.push('End date is required.');
@@ -76,6 +77,19 @@ const validateRotationPayload = (payload) => {
     };
 };
 
+const validateRotationTypeExists = async (rotationTypeId, errors) => {
+    if (rotationTypeId === null) return;
+
+    const rotationType = await prisma.rotation_types.findUnique({
+        where: { id: rotationTypeId },
+        select: { id: true }
+    });
+
+    if (!rotationType) {
+        errors.push('Selected rotation type does not exist.');
+    }
+};
+
 // ✅ GET ALL
 router.get('/', async (req, res) => {
     try {
@@ -88,6 +102,15 @@ router.get('/', async (req, res) => {
             orderBy: { id: 'asc' }
         });
         res.json(rotations);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/types', async (req, res) => {
+    try {
+        const types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } });
+        res.json(types);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -113,6 +136,9 @@ router.post('/', async (req, res) => {
     const { errors, data } = validateRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
 
+    await validateRotationTypeExists(data.rotation_type_id, errors);
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+
     try {
         const rotation = await prisma.rotations.create({ data });
         res.status(201).json(rotation);
@@ -126,6 +152,9 @@ router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id);
 
     const { errors, data } = validateRotationPayload(req.body);
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+
+    await validateRotationTypeExists(data.rotation_type_id, errors);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
 
     try {
