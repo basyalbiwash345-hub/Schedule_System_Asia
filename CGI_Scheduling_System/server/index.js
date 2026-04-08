@@ -401,13 +401,33 @@ app.get('/api/matrix-users', async (req, res) => {
         const users = await prisma.users.findMany({
             where: { status: 'active' },
             orderBy: { name: 'asc' },
-            select: { id: true, name: true, team_memberships: { select: { id: true, name: true, color: true } } },
+            include: {
+                team_memberships: {
+                    select: { id: true, name: true, color: true }
+                }
+            },
         });
-        const result = users.map(u => ({ id: u.id, name: u.name, teams: u.team_memberships }));
-        res.json(result);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
 
+        // We map the data so the frontend still receives a structure it understands.
+        // Even if the user has multiple teams, we provide the 'primary' (first) one
+        // so the current Matrix logic doesn't break.
+        const result = users.map(u => ({
+            id: u.id,
+            name: u.name,
+            // Provide the array for future-proofing
+            teams: u.team_memberships,
+            // Provide team_id for backward compatibility with the current MatrixView
+            team_id: u.team_memberships.length > 0 ? u.team_memberships[0].id : null,
+            // Provide team name for the labels in the Matrix
+            team_name: u.team_memberships.length > 0 ? u.team_memberships[0].name : 'Unassigned'
+        }));
+
+        res.json(result);
+    } catch (err) {
+        console.error('Matrix users fetch error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
 // ── SEED ──────────────────────────────────────────────────────────────────────
 const seedRoles = async () => {
     const count = await prisma.roles.count();
