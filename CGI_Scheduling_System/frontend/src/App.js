@@ -268,6 +268,7 @@ function App() {
                     teams={teams}
                     users={users}
                     isTeamAdmin={isTeamAdmin}
+                    currentUser={currentUser}
                     fetchTeams={fetchTeams}
                     fetchUsers={fetchUsers}
                     showNotification={showNotification}

@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 
 const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [], description: '' };
 
-const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotification, getTeamDisplayMembers, userLookup }) => {
+const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers, showNotification, getTeamDisplayMembers, userLookup }) => {
+    // Determine if current user is a Team Lead
+    const isTeamLead = currentUser?.roles?.includes('Team Lead / Supervisor') || false;
+    const isAdministrator = currentUser?.roles?.includes('Administrator') || false;
+    
+    // Check if current user is the lead of a specific team
+    const isTeamOwner = (teamLeadId) => currentUser && String(currentUser.id) === String(teamLeadId);
     // ── LOCAL STATE ──────────────────────────────────────────────────────────
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
     const [showEditTeamModal, setShowEditTeamModal] = useState(false);
@@ -37,6 +43,7 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
 
     const openCreateTeam = () => {
         if (!isTeamAdmin) { showNotification('Employees cannot create teams. Contact an administrator.', 'error'); return; }
+        if (isTeamLead && !isAdministrator) { showNotification('Team Leads cannot create teams. Contact an administrator.', 'error'); return; }
         setTeamFormData(DEFAULT_TEAM_FORM); setShowCreateTeamModal(true);
     };
 
@@ -44,6 +51,7 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
 
     const openEditTeam = (team) => {
         if (!isTeamAdmin) { showNotification('Employees cannot edit teams. Contact an administrator.', 'error'); return; }
+        if (isTeamLead && !isAdministrator && !isTeamOwner(team.lead_id)) { showNotification('Access Denied: You can only edit your own team.', 'error'); return; }
 
         // NEW: Dynamically calculate current members based on the relational database
         // We filter out the lead_id so they don't accidentally appear in the standard members checkbox list
@@ -138,7 +146,7 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
             <TeamDeleteConfirmModal />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ margin: 0, color: '#111827' }}>Team Management</h2>
-                {isTeamAdmin ? (
+                {isTeamAdmin && !isTeamLead ? (
                     <button className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.2rem' }} onClick={openCreateTeam}>+ Create Team</button>
                 ) : null}
             </div>
@@ -213,8 +221,12 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
                                     <button onClick={() => openViewTeam(team)} style={{ marginRight: '0.5rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>View</button>
                                     {isTeamAdmin ? (
                                         <>
-                                            <button onClick={() => openEditTeam(team)} style={{ marginRight: '0.5rem', background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Edit</button>
-                                            <button onClick={() => handleDeleteTeam(team.id)} style={{ background: '#fef2f2', color: '#e31937', border: '1px solid #fecaca', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Delete</button>
+                                            {(isAdministrator || isTeamOwner(team.lead_id)) && (
+                                                <button onClick={() => openEditTeam(team)} style={{ marginRight: '0.5rem', background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Edit</button>
+                                            )}
+                                            {isAdministrator && (
+                                                <button onClick={() => handleDeleteTeam(team.id)} style={{ background: '#fef2f2', color: '#e31937', border: '1px solid #fecaca', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Delete</button>
+                                            )}
                                         </>
                                     ) : null}
                                 </td>
@@ -332,7 +344,7 @@ const Teams = ({ teams, users, isTeamAdmin, fetchTeams, fetchUsers, showNotifica
                             );
                         })()}
                         <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                            {isTeamAdmin && (
+                            {isTeamAdmin && (isAdministrator || isTeamOwner(viewingTeam?.lead_id)) && (
                                 <button onClick={() => { setShowViewTeamModal(false); openEditTeam(viewingTeam); }} className="btn-primary" style={{ flex: 1 }}>Edit Team</button>
                             )}
                             <button onClick={() => setShowViewTeamModal(false)} className="btn-cancel" style={{ flex: 1 }}>Close</button>

@@ -22,6 +22,25 @@ const requireTeamAdmin = (req, res, next) => {
   }
 };
 
+// Administrator-only middleware - for create/delete operations
+const requireAdministratorOnly = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    const isAdministrator = decoded.roles?.some(role => role === 'Administrator');
+    if (!isAdministrator) {
+      return res.status(403).json({ error: 'Access denied: Administrators only' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Token is not valid' });
+  }
+};
+
 // GET /api/teams
 router.get('/', async function(req, res) {
   try {
@@ -61,7 +80,7 @@ router.get('/:id', async function(req, res) {
 });
 
 // POST /api/teams
-router.post('/', requireTeamAdmin, async function(req, res) {
+router.post('/', requireAdministratorOnly, async function(req, res) {
   try {
     const { name, color, leadId, members, role, description } = req.body;
     const team = await prisma.teams.create({
@@ -85,8 +104,28 @@ router.post('/', requireTeamAdmin, async function(req, res) {
 router.put('/:id', requireTeamAdmin, async function(req, res) {
   try {
     const { name, color, leadId, members, role, description } = req.body;
+    const teamId = parseInt(req.params.id);
+    
+    // Check if Team Lead is trying to edit a team they don't own
+    const isTeamLead = req.user.roles?.includes('Team Lead / Supervisor');
+    const isAdministrator = req.user.roles?.includes('Administrator');
+    
+    if (isTeamLead && !isAdministrator) {
+      // Fetch the team to check ownership
+      const team = await prisma.teams.findUnique({
+        where: { id: teamId }
+      });
+      
+      if (!team) return res.status(404).json({ error: 'Team not found' });
+      
+      // Team Lead can only edit their own team
+      if (String(team.lead_id) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Access denied: You can only edit your own team' });
+      }
+    }
+    
     const team = await prisma.teams.update({
-      where: { id: parseInt(req.params.id) },
+      where: { id: teamId },
       data: {
         name,
         color,
@@ -104,7 +143,7 @@ router.put('/:id', requireTeamAdmin, async function(req, res) {
 });
 
 // DELETE /api/teams/:id
-router.delete('/:id', requireTeamAdmin, async function(req, res) {
+router.delete('/:id', requireAdministratorOnly, async function(req, res) {
   try {
     await prisma.teams.delete({ where: { id: parseInt(req.params.id) } });
     res.json({ message: 'Team deleted successfully' });
