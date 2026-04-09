@@ -96,7 +96,8 @@ router.post('/', requireAdministratorOnly, async function(req, res) {
     });
     res.status(201).json(team);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create team' });
+    console.error('Create team error:', error);
+    res.status(500).json({ error: 'Failed to create team: ' + (error.message || 'Unknown error') });
   }
 });
 
@@ -138,7 +139,8 @@ router.put('/:id', requireTeamAdmin, async function(req, res) {
     });
     res.json(team);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update team' });
+    console.error('Update team error:', error);
+    res.status(500).json({ error: 'Failed to update team: ' + (error.message || 'Unknown error') });
   }
 });
 
@@ -148,7 +150,8 @@ router.delete('/:id', requireAdministratorOnly, async function(req, res) {
     await prisma.teams.delete({ where: { id: parseInt(req.params.id) } });
     res.json({ message: 'Team deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete team' });
+    console.error('Delete team error:', error);
+    res.status(500).json({ error: 'Failed to delete team: ' + (error.message || 'Unknown error') });
   }
 });
 

@@ -84,17 +84,24 @@ const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers,
         const url = editingTeam ? `/api/teams/${editingTeam.id}` : '/api/teams';
         const token = localStorage.getItem('token');
 
-        const r = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(teamFormData)
-        });
+        try {
+            const r = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(teamFormData)
+            });
 
-        if (r.ok) {
-            await fetchTeams();
-            await fetchUsers();
-            closeTeamModal();
-            showNotification('Team and member assignments updated successfully.');
+            if (r.ok) {
+                await fetchTeams();
+                await fetchUsers();
+                closeTeamModal();
+                showNotification('Team and member assignments updated successfully.');
+            } else {
+                const errorData = await r.json();
+                showNotification(errorData.error || 'Failed to save team. Please try again.', 'error');
+            }
+        } catch (error) {
+            showNotification('Network error. Please try again.', 'error');
         }
     };
 
