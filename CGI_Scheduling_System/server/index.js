@@ -300,6 +300,7 @@ const DEFAULT_ROTATION_TYPES = [
     { name: 'Working Stat',               default_interval_unit: 'day'  },
     { name: 'Encana Friday',              default_interval_unit: 'week' },
     { name: 'Service Desk',               default_interval_unit: 'week' },
+    { name: 'New',               default_interval_unit: 'week' },
 ];
 
 app.get('/api/rotation-types', authenticateToken,async (req, res) => {
