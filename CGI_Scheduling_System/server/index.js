@@ -293,11 +293,13 @@ app.get('/api/roles', authenticateToken, async (req, res) => {
 });
 
 const DEFAULT_ROTATION_TYPES = [
-    { name: 'Team-Level',          default_interval_unit: 'week' },
-    { name: 'Sub-Team',            default_interval_unit: 'week' },
-    { name: 'On-Call',             default_interval_unit: 'day'  },
-    { name: 'Business Domain',     default_interval_unit: 'week' },
-    { name: 'Cross-Team Analyst',  default_interval_unit: 'week' },
+    { name: '24/7 SPOC IT Services',      default_interval_unit: 'week' },
+    { name: '24/7 SPOC CDO Stewards',     default_interval_unit: 'week' },
+    { name: '24/7 SPOC CDO Escalation',   default_interval_unit: 'week' },
+    { name: 'Mountain Time Rotation',      default_interval_unit: 'week' },
+    { name: 'Working Stat',               default_interval_unit: 'day'  },
+    { name: 'Encana Friday',              default_interval_unit: 'week' },
+    { name: 'Service Desk',               default_interval_unit: 'week' },
 ];
 
 app.get('/api/rotation-types', authenticateToken,async (req, res) => {
