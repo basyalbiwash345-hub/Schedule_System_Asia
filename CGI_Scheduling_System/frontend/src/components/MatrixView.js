@@ -12,17 +12,22 @@ const DAYS_LONG  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday',
 const DAYS_SHORT = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 const CODE_COLORS = {
-    'V':    { bg:'#fef3c7', color:'#92400e', label:'Vacation' },
-    'MV':   { bg:'#fde68a', color:'#78350f', label:'Morning Vacation' },
-    'AV':   { bg:'#fcd34d', color:'#78350f', label:'Afternoon Vacation' },
-    'PV':   { bg:'#e5e7eb', color:'#6b7280', label:'Pending Vacation' },
-    'A':    { bg:'#fee2e2', color:'#991b1b', label:'Absence' },
-    'CD':   { bg:'#dbeafe', color:'#1e40af', label:'SPOC CDO Stewards' },
-    'IT':   { bg:'#ede9fe', color:'#5b21b6', label:'SPOC IT Services' },
-    'ES':   { bg:'#fce7f3', color:'#9d174d', label:'SPOC Escalation' },
-    'MT':   { bg:'#d1fae5', color:'#065f46', label:'Mountain Time' },
-    'SD':   { bg:'#ffedd5', color:'#9a3412', label:'Service Desk' },
-    'CLEAR':{ bg:'#f3f4f6', color:'#6b7280', label:'Clear cell' },
+    'V':  { bg: '#c00000', color: '#fff', label: 'Vacation' },
+    'A':  { bg: '#00ccff', color: '#000', label: 'Absence' },
+    'IT': { bg: '#ff00ff', color: '#fff', label: '24/7 SPOC IT Services' },
+    'CD': { bg: '#ffff00', color: '#000', label: '24/7 SPOC CDO Stewards' },
+    'ES': { bg: '#0099cc', color: '#fff', label: '24/7 SPOC CDO Escalation' },
+    'MT': { bg: '#cc9900', color: '#fff', label: 'Mountain time rotation' },
+    'MV': { bg: '#7030a0', color: '#fff', label: 'Morning Vacation' },
+    'AV': { bg: '#ff0066', color: '#fff', label: 'Afternoon Vacation' },
+    'WS': { bg: '#c55a11', color: '#fff', label: 'Working Stat' },
+    'EF': { bg: '#e2efda', color: '#000', label: 'Encana Friday' },
+    'CH': { bg: '#fbe5d6', color: '#000', label: 'Canadian holiday' },
+    'UH': { bg: '#ddebf7', color: '#000', label: 'US holiday' },
+    'W':  { bg: '#d9d9d9', color: '#000', label: 'Weekend' },
+    'PV': { bg: '#ffc000', color: '#000', label: 'Pending Vacation' },
+    'SD': { bg: '#00ff00', color: '#000', label: 'Service Desk' },
+    'CLEAR': { bg: '#f3f4f6', color: '#6b7280', label: 'Clear cell' },
 };
 
 const STATUS_OPTIONS = ['confirmed','pending','blocked'];
