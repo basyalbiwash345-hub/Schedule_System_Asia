@@ -287,22 +287,15 @@ const validateMembersForScope = async (
     return { members };
 };
 
-const validateDoubleBooking = async (
-    rotationId,
-    memberIds,
-    startDate,
-    endDate,
-    intervalUnit,
-    intervalCount,
-    errors
-) => {
-    if (!memberIds.length) return;
+// Returns array of member IDs that are double-booked across overlapping rotations.
+const checkDoubleBooking = async (rotationId, memberIds, startDate, endDate) => {
+    if (!memberIds.length) return [];
 
-    const rotations = await prisma.rotations.findMany({
+    const others = await prisma.rotations.findMany({
         where: rotationId ? { id: { not: rotationId } } : {},
         select: {
             id: true,
-            name: true,
+            allow_double_booking: true,
             start_date: true,
             end_date: true,
             interval_unit: true,
@@ -311,40 +304,23 @@ const validateDoubleBooking = async (
         },
     });
 
-    const newStart = startDate;
-    const newEnd = endDate || getIntervalEndDate(startDate, intervalUnit, intervalCount);
+    const conflicting = new Set();
 
-    const conflictingMembers = new Set();
-
-    rotations.forEach((rotation) => {
-        if (!rotation.assigned_member_ids) return;
-        const existingIds = Array.isArray(rotation.assigned_member_ids)
-            ? rotation.assigned_member_ids
-                .map((id) => Number.parseInt(id, 10))
-                .filter((id) => !Number.isNaN(id))
+    others.forEach((r) => {
+        // Skip rotations that explicitly allow double-booking
+        if (r.allow_double_booking) return;
+        const existingIds = Array.isArray(r.assigned_member_ids)
+            ? r.assigned_member_ids.map((id) => Number.parseInt(id, 10)).filter((id) => !Number.isNaN(id))
             : [];
         if (!existingIds.length) return;
 
-        const existingStart = rotation.start_date;
-        const existingEnd =
-            rotation.end_date ||
-            getIntervalEndDate(
-                existingStart,
-                rotation.interval_unit,
-                rotation.interval_count || 1
-            );
+        const existingEnd = r.end_date || getIntervalEndDate(r.start_date, r.interval_unit, r.interval_count || 1);
+        if (!intervalsOverlap(startDate, endDate, r.start_date, existingEnd)) return;
 
-        if (!intervalsOverlap(newStart, newEnd, existingStart, existingEnd))
-            return;
-
-        existingIds.forEach((id) => {
-            if (memberIds.includes(id)) conflictingMembers.add(id);
-        });
+        existingIds.forEach((id) => { if (memberIds.includes(id)) conflicting.add(id); });
     });
 
-    if (conflictingMembers.size > 0) {
-        errors.push('Double-booking detected for one or more members.');
-    }
+    return Array.from(conflicting);
 };
 
 // GET ALL
@@ -409,6 +385,17 @@ router.post('/', async (req, res) => {
     );
     if (errors.length) return res.status(400).json({ errors });
 
+    if (!data.allow_double_booking) {
+        const conflictingIds = await checkDoubleBooking(null, data.assigned_member_ids, data.start_date, data.end_date);
+        if (conflictingIds.length > 0) {
+            return res.status(409).json({
+                conflict: true,
+                error: 'One or more members are already assigned to an overlapping rotation.',
+                conflicting_member_ids: conflictingIds,
+            });
+        }
+    }
+
     try {
         const rotation = await prisma.rotations.create({ data });
         await logAction(null, 'rotation_created', 'rotation', rotation.id, null, rotation);
@@ -454,6 +441,17 @@ router.put('/:id', async (req, res) => {
         existing
     );
     if (errors.length) return res.status(400).json({ errors });
+
+    if (!data.allow_double_booking) {
+        const conflictingIds = await checkDoubleBooking(id, data.assigned_member_ids, data.start_date, data.end_date);
+        if (conflictingIds.length > 0) {
+            return res.status(409).json({
+                conflict: true,
+                error: 'One or more members are already assigned to an overlapping rotation.',
+                conflicting_member_ids: conflictingIds,
+            });
+        }
+    }
 
     try {
         const updated = await prisma.rotations.update({ where: { id }, data });

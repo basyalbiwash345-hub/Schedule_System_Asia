@@ -43,6 +43,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
     const [showViewRotationModal, setShowViewRotationModal] = useState(false);
     const [rotationDeleteConfirm, setRotationDeleteConfirm] = useState(DEFAULT_ROTATION_DELETE_CONFIRM);
     const [rotationPopup, setRotationPopup] = useState(DEFAULT_ROTATION_POPUP);
+    const [conflictWarning, setConflictWarning] = useState(null); // { memberIds: [], message: '' }
 
     // Filters
     const [rotationSearchTerm, setRotationSearchTerm] = useState('');
@@ -165,6 +166,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         setIntervalPreset('weekly');
         setShowRotationMemberDropdown(false);
         setRotationMemberSearch('');
+        setConflictWarning(null);
     };
 
     const closeRotationPopup = () => setRotationPopup(DEFAULT_ROTATION_POPUP);
@@ -196,6 +198,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
     const handleSaveRotation = async (e) => {
         e.preventDefault();
         closeRotationPopup();
+        setConflictWarning(null);
         const isEditing = Boolean(editingRotation);
         const errorTitle = isEditing ? 'Unable to update rotation' : 'Unable to create rotation';
 
@@ -210,13 +213,12 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
 
         const rotationTypeId = Number.parseInt(rotationFormData.rotation_type_id, 10);
         const intervalCount = Number.parseInt(rotationFormData.interval_count, 10);
-        if (Number.isNaN(rotationTypeId)) return showRotationPopupModal('error', errorTitle, 'Rotation type is invalid.');
         if (Number.isNaN(intervalCount) || intervalCount < 1) return showRotationPopupModal('error', errorTitle, 'Rotation interval must be at least 1.');
 
         const payload = {
             ...rotationFormData,
             name: rotationFormData.name.trim(),
-            rotation_type_id: rotationTypeId,
+            rotation_type_id: Number.isNaN(rotationTypeId) ? null : rotationTypeId,
             team_id: rotationFormData.team_id,
             location_id: null,
             assigned_member_ids: assignedMembers.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id)),
@@ -234,10 +236,24 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
             });
 
             const data = await r.json().catch(() => ({}));
+
+            // Conflict detected — surface inside the form so the user can override
+            if (r.status === 409 && data.conflict) {
+                const conflictNames = (data.conflicting_member_ids || [])
+                    .map(id => users.find(u => String(u.id) === String(id))?.name || `Member #${id}`)
+                    .join(', ');
+                setConflictWarning({
+                    memberIds: data.conflicting_member_ids || [],
+                    message: `Scheduling conflict: ${conflictNames} ${data.conflicting_member_ids?.length === 1 ? 'is' : 'are'} already assigned to an overlapping rotation.`
+                });
+                return;
+            }
+
             if (!r.ok) return showRotationPopupModal('error', errorTitle, Array.isArray(data.errors) ? data.errors.join(' ') : data.error || 'An error occurred while saving.');
 
             await fetchRotations();
             resetRotationForm();
+            setConflictWarning(null);
             setShowCreateRotationModal(false);
             showRotationPopupModal('success', isEditing ? 'Rotation updated' : 'Rotation created', isEditing ? 'Rotation updated successfully.' : 'Rotation created successfully.');
         } catch { showRotationPopupModal('error', errorTitle, 'Network error. Please try again.'); }
@@ -516,9 +532,29 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                             <div className="form-group"><label>Notes / Description</label><textarea className="enterprise-input" rows="3" value={rotationFormData.notes} onChange={e => setRotationFormData({ ...rotationFormData, notes: e.target.value })} /></div>
                             <div className="form-group"><label>Escalation Tiers (optional)</label><textarea className="enterprise-input" rows="2" placeholder="Tier 1, Tier 2 or JSON" value={rotationFormData.escalation_tiers} onChange={e => setRotationFormData({ ...rotationFormData, escalation_tiers: e.target.value })} /><p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.35rem' }}>Comma-separated list or JSON array.</p></div>
                             <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <input type="checkbox" checked={rotationFormData.allow_double_booking} onChange={e => setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked })} />
-                                <span style={{ fontSize: '0.85rem', color: '#374151' }}>Allow double-booking (optional)</span>
+                                <input type="checkbox" id="allow_double_booking" checked={rotationFormData.allow_double_booking} onChange={e => { setRotationFormData({ ...rotationFormData, allow_double_booking: e.target.checked }); setConflictWarning(null); }} />
+                                <label htmlFor="allow_double_booking" style={{ fontSize: '0.85rem', color: '#374151', cursor: 'pointer', margin: 0 }}>Allow double-booking (override conflicts)</label>
                             </div>
+
+                            {/* Staffing minimum warning */}
+                            {rotationFormData.assigned_member_ids.length === 1 && (
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.65rem 0.85rem', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', fontSize: '0.82rem', color: '#92400e' }}>
+                                    <span style={{ fontWeight: 700, flexShrink: 0 }}>⚠ Staffing minimum</span>
+                                    <span>Only 1 member assigned. Consider adding a backup to avoid a single point of failure.</span>
+                                </div>
+                            )}
+
+                            {/* Conflict warning — shown when server returns 409 */}
+                            {conflictWarning && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem 0.85rem', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '0.82rem', color: '#991b1b' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                        <span style={{ fontWeight: 700, flexShrink: 0 }}>⚠ Scheduling conflict</span>
+                                        <span>{conflictWarning.message}</span>
+                                    </div>
+                                    <span style={{ color: '#6b7280' }}>Enable <strong>Allow double-booking</strong> above to override and save anyway.</span>
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
                                 <button type="submit" className="btn-primary" style={{ flex: 1 }}>{editingRotation ? 'Update Rotation' : 'Create Rotation'}</button>
                                 <button type="button" onClick={closeEditRotation} className="btn-cancel" style={{ flex: 1 }}>Cancel</button>

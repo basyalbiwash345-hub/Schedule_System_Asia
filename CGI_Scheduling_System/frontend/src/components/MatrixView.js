@@ -867,8 +867,8 @@ export default function MatrixView() {
     // Rotations for filter
     const [rotations,          setRotations]          = useState([]);
     const [filterRotationType, setFilterRotationType] = useState([]);
-    // Conflict tracking: set of "empId_date" keys that have a conflict warning
-    const [conflictKeys,       setConflictKeys]       = useState(new Set());
+    // Conflict tracking: cell-level (from PUT 409 responses)
+    const [cellConflictKeys,   setCellConflictKeys]   = useState(new Set());
 
     const [schedule, dispatchSchedule] = useReducer(scheduleReducer, {});
 
@@ -964,6 +964,47 @@ export default function MatrixView() {
         return map;
     }, [rotations]);
 
+    // Conflict keys derived from overlapping rotation date ranges
+    const rotationConflictKeys = useMemo(() => {
+        const keys = new Set();
+        for (let i = 0; i < rotations.length; i++) {
+            for (let j = i + 1; j < rotations.length; j++) {
+                const a = rotations[i];
+                const b = rotations[j];
+                // Skip if either rotation explicitly allows double-booking
+                if (a.allow_double_booking || b.allow_double_booking) continue;
+                const aStart = new Date(a.start_date);
+                const aEnd   = new Date(a.end_date || a.start_date);
+                const bStart = new Date(b.start_date);
+                const bEnd   = new Date(b.end_date || b.start_date);
+                // No overlap
+                if (aStart > bEnd || bStart > aEnd) continue;
+                // Find common assigned members
+                const aIds = new Set((a.assigned_member_ids || []).map(String));
+                const common = (b.assigned_member_ids || []).map(String).filter(id => aIds.has(id));
+                if (!common.length) continue;
+                // Mark every day in the overlapping range for each conflicting member
+                const overlapStart = new Date(Math.max(aStart, bStart));
+                const overlapEnd   = new Date(Math.min(aEnd,   bEnd));
+                const cur = new Date(overlapStart);
+                while (cur <= overlapEnd) {
+                    const ds = dateToStr(cur);
+                    common.forEach(id => keys.add(`${id}_${ds}`));
+                    cur.setDate(cur.getDate() + 1);
+                }
+            }
+        }
+        return keys;
+    }, [rotations]);
+
+    // Merged conflict keys (rotation-level + cell-level PUT 409 responses)
+    const conflictKeys = useMemo(() => {
+        if (!cellConflictKeys.size) return rotationConflictKeys;
+        const merged = new Set(rotationConflictKeys);
+        cellConflictKeys.forEach(k => merged.add(k));
+        return merged;
+    }, [rotationConflictKeys, cellConflictKeys]);
+
     // Unique rotation type names for the filter panel
     const rotationTypeNames = useMemo(() => {
         const names = new Set();
@@ -1017,14 +1058,14 @@ export default function MatrixView() {
 
             // Conflict: server returned 409 or conflict flag
             if (res.status === 409 || data.conflict) {
-                setConflictKeys(prev => {
+                setCellConflictKeys(prev => {
                     const n = new Set(prev);
                     n.add(key);
                     return n;
                 });
             } else {
                 // Clear any previous conflict on this cell
-                setConflictKeys(prev => {
+                setCellConflictKeys(prev => {
                     if (!prev.has(key)) return prev;
                     const n = new Set(prev); n.delete(key); return n;
                 });
