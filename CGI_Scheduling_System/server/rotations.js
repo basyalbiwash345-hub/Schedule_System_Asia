@@ -173,7 +173,6 @@ const parseRotationPayload = (payload) => {
         errors
     );
 
-    if (rotationTypeId === null) errors.push('Rotation type is required.');
     if (!name) errors.push('Rotation name is required.');
     if (!startDate) errors.push('Start date is required.');
     if (!endDate) errors.push('End date is required.');
@@ -396,8 +395,10 @@ router.post('/', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
-    await validateRotationTypeExists(data.rotation_type_id, errors);
-    if (errors.length) return res.status(400).json({ errors });
+    if (data.rotation_type_id !== null) {
+        await validateRotationTypeExists(data.rotation_type_id, errors);
+        if (errors.length) return res.status(400).json({ errors });
+    }
 
     await validateMembersForScope(
         data.assigned_member_ids,
@@ -430,8 +431,10 @@ router.put('/:id', async (req, res) => {
     const { errors, data } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
-    await validateRotationTypeExists(data.rotation_type_id, errors);
-    if (errors.length) return res.status(400).json({ errors });
+    if (data.rotation_type_id !== null) {
+        await validateRotationTypeExists(data.rotation_type_id, errors);
+        if (errors.length) return res.status(400).json({ errors });
+    }
 
     let existing;
     try {

@@ -199,7 +199,6 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
         const isEditing = Boolean(editingRotation);
         const errorTitle = isEditing ? 'Unable to update rotation' : 'Unable to create rotation';
 
-        if (!rotationFormData.rotation_type_id) return showRotationPopupModal('error', errorTitle, 'Rotation type is required.');
         if (!rotationFormData.name.trim()) return showRotationPopupModal('error', errorTitle, 'Rotation name is required.');
         if (!rotationFormData.team_id) return showRotationPopupModal('error', errorTitle, 'Assigned team is required.');
         if (!rotationFormData.start_date) return showRotationPopupModal('error', errorTitle, 'Start date is required.');
@@ -432,8 +431,9 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                         </div>
                         <form onSubmit={handleSaveRotation}>
                             <div className="form-group">
-                                <label>Rotation Type <span style={{ color: '#e31937' }}>*</span></label>
-                                <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData(prev => ({ ...prev, rotation_type_id: e.target.value }))} required>
+                                <label>Rotation Type <span style={{ color: '#6b7280', fontSize: '0.8rem', fontWeight: 400 }}>(optional)</span></label>
+                                <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData(prev => ({ ...prev, rotation_type_id: e.target.value }))}>
+
                                     <option value="">
                                         {rotationTypesLoading ? 'Loading rotation types...' : rotationTypes.length === 0 ? 'No rotation types available' : 'Select rotation type'}
                                     </option>
