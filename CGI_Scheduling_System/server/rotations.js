@@ -190,7 +190,7 @@ const validateMembersForScope = async (
 
     const members = await prisma.users.findMany({
         where: { id: { in: memberIds } },
-        select: { id: true, team_id: true, location: true, name: true },
+        select: { id: true, team_memberships: { select: { id: true } }, location: true, name: true },
     });
 
     if (members.length !== memberIds.length) {
@@ -208,7 +208,7 @@ const validateMembersForScope = async (
         );
         const teamUnchanged = existingRotation?.team_id === teamId;
         const invalid = members.filter((m) => {
-            if (m.team_id === teamId) return false;
+            if (m.team_memberships?.some(t => t.id === teamId)) return false;
             return !(teamUnchanged && existingMemberIds.has(m.id));
         });
 

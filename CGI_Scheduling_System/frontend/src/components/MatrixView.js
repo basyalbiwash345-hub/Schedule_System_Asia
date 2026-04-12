@@ -1168,7 +1168,7 @@ export default function MatrixView() {
 
                 {/* Filters button */}
                 <button onClick={()=>setShowFilters(f=>!f)} style={{ ...navBtnSt, fontSize:'0.73rem', padding:'0.28rem 0.65rem', background:hasActiveFilters?'#fef2f2':'#f3f4f6', color:hasActiveFilters?'#e31937':'#374151', border:`1px solid ${hasActiveFilters?'#fca5a5':'#e5e7eb'}` }}>
-                    ⚙ Filters{hasActiveFilters?` (${filterCode.length+filterTeam.length})`:''}
+                    ⚙ Filters{hasActiveFilters?` (${filterTeam.length+filterRotationType.length})`:''}
                 </button>
             </div>
 
@@ -1180,7 +1180,7 @@ export default function MatrixView() {
                         <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' }}>
                             {Object.entries(CODE_COLORS).filter(([c])=>c!=='CLEAR').map(([code,cfg])=>{
                                 const on=filterCode.includes(code);
-                                return <button key={code} onClick={()=>setFilterCode(p=>on?p.filter(c=>c!==code):[...p,code])} style={{ padding:'0.18rem 0.55rem', borderRadius:20, fontSize:'0.7rem', border:`2px solid ${on?cfg.color:'#e5e7eb'}`, background:on?cfg.bg:'#fff', color:on?cfg.color:'#9ca3af', fontWeight:on?700:400, cursor:'pointer' }}>{on?'✓ ':''}{code}</button>;
+                                return <button key={code} onClick={()=>setFilterCode(p=>on?p.filter(c=>c!==code):[...p,code])} style={{ padding:'0.18rem 0.65rem', borderRadius:20, fontSize:'0.7rem', border:`2px solid ${on?cfg.color:'#e5e7eb'}`, background:on?cfg.bg:'#fff', color:on?cfg.color:'#9ca3af', fontWeight:on?700:400, cursor:'pointer' }}>{on?'✓ ':''}<strong>{code}</strong> — {cfg.label}</button>;
                             })}
                             {filterCode.length>0 && <button onClick={()=>setFilterCode([])} style={{ fontSize:'0.7rem', color:'#e31937', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>✕ Clear</button>}
                         </div>
@@ -1217,6 +1217,25 @@ export default function MatrixView() {
                     )}
                 </div>
             )}
+
+            {/* ── Quick Filter Bar ── */}
+            <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:10, padding:'0.55rem 1rem', display:'flex', gap:'0.4rem', flexWrap:'wrap', alignItems:'center', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
+                <span style={{ fontSize:'0.68rem', fontWeight:700, color:'#374151', textTransform:'uppercase', letterSpacing:'0.06em', whiteSpace:'nowrap', marginRight:'0.25rem' }}>Filter by type:</span>
+                {Object.entries(CODE_COLORS).filter(([c])=>c!=='CLEAR' && c!=='W').map(([code, cfg]) => {
+                    const on = filterCode.includes(code);
+                    return (
+                        <button key={code}
+                            title={`${code} — ${cfg.label}`}
+                            onClick={() => setFilterCode(p => on ? p.filter(c => c !== code) : [...p, code])}
+                            style={{ padding:'0.2rem 0.65rem', borderRadius:20, fontSize:'0.72rem', border:`2px solid ${on ? cfg.color : '#e5e7eb'}`, background: on ? cfg.bg : '#f9fafb', color: on ? cfg.color : '#6b7280', fontWeight: on ? 700 : 400, cursor:'pointer', whiteSpace:'nowrap', transition:'all 0.12s' }}>
+                            {on ? '✓ ' : ''}{cfg.label}
+                        </button>
+                    );
+                })}
+                {filterCode.length > 0 && (
+                    <button onClick={() => setFilterCode([])} style={{ marginLeft:'auto', fontSize:'0.7rem', color:'#e31937', background:'none', border:'none', cursor:'pointer', fontWeight:700, whiteSpace:'nowrap' }}>✕ Clear</button>
+                )}
+            </div>
 
             {/* Active code hint */}
             {viewMode==='matrix' && activeCode && (
