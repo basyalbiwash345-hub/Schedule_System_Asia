@@ -5,6 +5,51 @@ const prisma = require('./db');
 const ALLOWED_INTERVAL_UNITS = new Set(['day', 'week', 'biweek', 'month']);
 const ALLOWED_STATUS = new Set(['active', 'inactive']);
 
+// Maps rotation type names (lowercase) to matrix schedule codes
+const ROTATION_TYPE_CODE_MAP = {
+    '24/7 spoc it services':    'IT',
+    '24/7 spoc cdo stewards':   'CD',
+    '24/7 spoc cdo escalation': 'ES',
+    'mountain time rotation':   'MT',
+    'working stat':             'WS',
+    'encana friday':            'EF',
+    'service desk':             'SD',
+};
+
+const getStatusCode = (rotationTypeName) => {
+    if (!rotationTypeName) return null;
+    return ROTATION_TYPE_CODE_MAP[rotationTypeName.toLowerCase().trim()] || null;
+};
+
+const generateAssignments = async (rotationId, memberIds, startDate, endDate, statusCode) => {
+    if (!statusCode || !memberIds.length || !startDate || !endDate) return;
+    const assignments = [];
+    const cur = new Date(startDate);
+    const end = new Date(endDate);
+    cur.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    while (cur <= end) {
+        const dayStart = new Date(cur);
+        const dayEnd = new Date(cur);
+        dayEnd.setHours(23, 59, 59, 999);
+        for (const userId of memberIds) {
+            assignments.push({
+                rotation_id: rotationId,
+                user_id: userId,
+                start_time: new Date(dayStart),
+                end_time: new Date(dayEnd),
+                status_code: statusCode,
+                status: 'scheduled',
+                slot: 'full',
+            });
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+    if (assignments.length) {
+        await prisma.rotation_assignments.createMany({ data: assignments });
+    }
+};
+
 const parseOptionalInt = (value) => {
     if (value === undefined || value === null || value === '') return null;
     const parsed = Number.parseInt(value, 10);
@@ -364,10 +409,15 @@ router.post('/', async (req, res) => {
     if (errors.length) return res.status(400).json({ errors });
 
     try {
-        const rotation = await prisma.rotations.create({
-            data,
-        });
+        const rotation = await prisma.rotations.create({ data });
         await logAction(null, 'rotation_created', 'rotation', rotation.id, null, rotation);
+
+        const rotationType = await prisma.rotation_types.findUnique({
+            where: { id: data.rotation_type_id },
+            select: { name: true },
+        });
+        await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, getStatusCode(rotationType?.name));
+
         res.status(201).json(rotation);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -403,12 +453,17 @@ router.put('/:id', async (req, res) => {
     if (errors.length) return res.status(400).json({ errors });
 
     try {
-        const updated = await prisma.rotations.update({
-            where: { id },
-            data,
-        });
-
+        const updated = await prisma.rotations.update({ where: { id }, data });
         await logAction(null, 'rotation_updated', 'rotation', id, existing, updated);
+
+        // Regenerate schedule assignments from the new rotation definition
+        await prisma.rotation_assignments.deleteMany({ where: { rotation_id: id } });
+        const rotationType = await prisma.rotation_types.findUnique({
+            where: { id: data.rotation_type_id },
+            select: { name: true },
+        });
+        await generateAssignments(id, data.assigned_member_ids, data.start_date, data.end_date, getStatusCode(rotationType?.name));
+
         res.json(updated);
     } catch (err) {
         res.status(500).json({ error: err.message });
