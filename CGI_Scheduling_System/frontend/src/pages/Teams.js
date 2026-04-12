@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const DEFAULT_TEAM_FORM = { name: '', color: '#e31937', leadId: '', members: [], description: '' };
 
-const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers, showNotification, getTeamDisplayMembers, userLookup }) => {
+const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers, showNotification, getTeamDisplayMembers, userLookup, onTeamMutated }) => {
     // Determine if current user is a Team Lead
     const isTeamLead = currentUser?.roles?.includes('Team Lead / Supervisor') || false;
     const isAdministrator = currentUser?.roles?.includes('Administrator') || false;
@@ -96,6 +96,7 @@ const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers,
                 await fetchUsers();
                 closeTeamModal();
                 showNotification('Team and member assignments updated successfully.');
+                onTeamMutated?.();
             } else {
                 const errorData = await r.json();
                 showNotification(errorData.error || 'Failed to save team. Please try again.', 'error');
@@ -116,7 +117,7 @@ const Teams = ({ teams, users, isTeamAdmin, currentUser, fetchTeams, fetchUsers,
         setTeamDeleteConfirm({ open: false, teamId: null, teamName: '' });
         try {
             const r = await fetch(`/api/teams/${teamId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-            if (r.ok) { fetchTeams(); showNotification('Team deleted successfully.'); }
+            if (r.ok) { fetchTeams(); showNotification('Team deleted successfully.'); onTeamMutated?.(); }
             else { const data = await r.json(); showNotification(data.error || 'Failed to delete team.', 'error'); }
         } catch { showNotification('Network error. Please try again.', 'error'); }
     };

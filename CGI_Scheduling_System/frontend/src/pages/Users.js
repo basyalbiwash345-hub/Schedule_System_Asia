@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 // CHANGED: team_id is now team_ids array
 const DEFAULT_USER_FORM = { first_name: '', last_name: '', username: '', email: '', phone: '', location: '', team_ids: [], roles: [], password: '' };
 
-const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNotification }) => {
+const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNotification, onTeamMutated }) => {
     // ── LOCAL STATE ──────────────────────────────────────────────────────────
     const [userForm, setUserForm] = useState(DEFAULT_USER_FORM);
     const [userFormErrors, setUserFormErrors] = useState({});
@@ -99,6 +99,7 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
             }
             setUserFormSuccess(editingUser ? 'User updated successfully.' : 'User created successfully.');
             fetchUsers();
+            onTeamMutated?.();
             setTimeout(() => { closeUserModal(); }, 1500);
         } catch { setUserFormErrors({ general: 'Network error. Please try again.' }); }
     };
@@ -112,7 +113,7 @@ const Users = ({ users, teams, roles, locations, isUserAdmin, fetchUsers, showNo
         try {
             const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
-            if (res.ok) { fetchUsers(); showNotification('User deleted successfully.'); }
+            if (res.ok) { fetchUsers(); showNotification('User deleted successfully.'); onTeamMutated?.(); }
             else { showNotification(data.error || 'Failed to delete user.', 'error'); }
         } catch { showNotification('Network error. Please try again.', 'error'); }
     };

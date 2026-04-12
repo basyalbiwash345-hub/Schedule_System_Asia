@@ -61,6 +61,8 @@ function App() {
     const [currentUser,setCurrentUser]= useState(null);
     const [activePage, setActivePage] = useState('Matrix');
     const [selectedTeam, setSelectedTeam] = useState(null);
+    const [matrixRefreshKey, setMatrixRefreshKey] = useState(0);
+    const triggerMatrixRefresh = () => setMatrixRefreshKey(k => k + 1);
 
 
 
@@ -257,6 +259,7 @@ function App() {
                     isUserAdmin={isUserAdmin}
                     fetchUsers={fetchUsers}
                     showNotification={showNotification}
+                    onTeamMutated={triggerMatrixRefresh}
                 />
             );
         }
@@ -274,6 +277,7 @@ function App() {
                     showNotification={showNotification}
                     getTeamDisplayMembers={getTeamDisplayMembers}
                     userLookup={userLookup}
+                    onTeamMutated={triggerMatrixRefresh}
                 />
             );
         }
@@ -295,7 +299,7 @@ function App() {
         }
 
 
-        if (activePage === 'Matrix') return <MatrixView />;
+        if (activePage === 'Matrix') return <MatrixView refreshKey={matrixRefreshKey} />;
 
         if (activePage === 'Roles') {
             const rolePermissions = {

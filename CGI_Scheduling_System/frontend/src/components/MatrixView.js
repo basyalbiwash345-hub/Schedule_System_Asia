@@ -107,6 +107,7 @@ function scheduleReducer(state, action) {
             return next;
         }
         case 'MERGE': return { ...state, ...action.data };
+        case 'RESET': return {};
         default:      return state;
     }
 }
@@ -841,7 +842,7 @@ function CalendarView({ year, monthIdx, schedule, employees, onOpenModal }) {
 }
 
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
-export default function MatrixView() {
+export default function MatrixView({ refreshKey = 0 }) {
     const [year,          setYear]          = useState(today.getFullYear());
     const [monthIdx,      setMonthIdx]      = useState(today.getMonth());
     const [viewMode,      setViewMode]      = useState('matrix');
@@ -907,8 +908,12 @@ export default function MatrixView() {
         return Array.from(seen);
     }, [dates]);
 
-    // Fetch employees, teams, and rotations
+    // Fetch employees, teams, and rotations — re-runs when refreshKey changes (team/user CRUD)
     useEffect(() => {
+        setLoading(true);
+        // Clear the schedule cache so new members' rows get their schedule re-fetched
+        setFetchedMonths(new Set());
+        dispatchSchedule({ type: 'RESET' });
         Promise.all([
             fetch('/api/matrix-users').then(r=>r.json()).catch(()=>[]),
             fetch('/api/teams').then(r=>r.json()).catch(()=>[]),
@@ -918,7 +923,7 @@ export default function MatrixView() {
             setTeams(Array.isArray(tms)?tms:[]);
             setRotations(Array.isArray(rots)?rots:[]);
         }).finally(()=>setLoading(false));
-    }, []);
+    }, [refreshKey]);
 
     // Fetch all months currently in view + one prefetch month ahead
     useEffect(() => {
@@ -1012,22 +1017,45 @@ export default function MatrixView() {
         return Array.from(names).sort();
     }, [rotations]);
 
-    // Grouped employees (respects search, team filter, rotation type filter, row mode)
+    // Grouped employees — each user appears under every team they belong to
     const grouped = useMemo(() => {
         let emps = employees;
         if (searchTerm.trim()) {
-            const q=searchTerm.toLowerCase();
-            emps=emps.filter(e=>e.name.toLowerCase().includes(q)||e.team_name?.toLowerCase().includes(q));
+            const q = searchTerm.toLowerCase();
+            emps = emps.filter(e =>
+                e.name.toLowerCase().includes(q) ||
+                (e.teams||[]).some(t => (t.name||'').toLowerCase().includes(q))
+            );
         }
-        if (filterTeam.length>0) emps=emps.filter(e=>filterTeam.includes(String(e.team_id)));
-        if (filterRotationType.length>0) {
-            emps=emps.filter(e => {
+        // Team filter: keep employees that belong to ANY of the selected teams
+        if (filterTeam.length > 0) {
+            emps = emps.filter(e =>
+                (e.teams||[]).some(t => filterTeam.includes(String(t.id)))
+            );
+        }
+        if (filterRotationType.length > 0) {
+            emps = emps.filter(e => {
                 const types = empRotationTypes[String(e.id)];
                 return types && filterRotationType.some(t => types.has(t));
             });
         }
-        const g={};
-        emps.forEach(e=>{ const k=e.team_name||'Unassigned'; if(!g[k]) g[k]=[]; g[k].push(e); });
+        const g = {};
+        emps.forEach(e => {
+            const userTeams = Array.isArray(e.teams) && e.teams.length > 0 ? e.teams : null;
+            if (userTeams) {
+                userTeams.forEach(t => {
+                    const k = t.name || 'Unassigned';
+                    if (!g[k]) g[k] = [];
+                    // Avoid duplicate rows for same user in same group
+                    if (!g[k].some(m => m.id === e.id)) {
+                        g[k].push({ ...e, team_color: t.color || '#6b7280' });
+                    }
+                });
+            } else {
+                if (!g['Unassigned']) g['Unassigned'] = [];
+                g['Unassigned'].push(e);
+            }
+        });
         return g;
     }, [employees, searchTerm, filterTeam, filterRotationType, empRotationTypes]);
 
