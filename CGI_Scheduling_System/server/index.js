@@ -293,17 +293,21 @@ app.get('/api/roles', authenticateToken, async (req, res) => {
 });
 
 const DEFAULT_ROTATION_TYPES = [
-    { name: '24/7 SPOC IT Services',      default_interval_unit: 'week' },
-    { name: '24/7 SPOC CDO Stewards',     default_interval_unit: 'week' },
-    { name: '24/7 SPOC CDO Escalation',   default_interval_unit: 'week' },
-    { name: 'Mountain Time Rotation',      default_interval_unit: 'week' },
-    { name: 'Working Stat',               default_interval_unit: 'day'  },
-    { name: 'Encana Friday',              default_interval_unit: 'week' },
-    { name: 'Service Desk',               default_interval_unit: 'week' },
-    { name: 'New',               default_interval_unit: 'week' },
+    { name: '24/7 SPOC IT Services',    code: 'IT', default_interval_unit: 'week' },
+    { name: '24/7 SPOC CDO Stewards',   code: 'CD', default_interval_unit: 'week' },
+    { name: '24/7 SPOC CDO Escalation', code: 'ES', default_interval_unit: 'week' },
+    { name: 'Mountain Time Rotation',   code: 'MT', default_interval_unit: 'week' },
+    { name: 'Working Stat',             code: 'WS', default_interval_unit: 'day'  },
+    { name: 'Encana Friday',            code: 'EF', default_interval_unit: 'week' },
+    { name: 'Service Desk',             code: 'SD', default_interval_unit: 'week' },
+    { name: 'New',                      code: null, default_interval_unit: 'week' },
 ];
 
+<<<<<<< Updated upstream
 app.get('/api/rotation-types', authenticateToken,async (req, res) => {IF
+=======
+app.get('/api/rotation-types', authenticateToken, async (req, res) => {
+>>>>>>> Stashed changes
     try {
         let types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } });
         if (types.length === 0) { await prisma.rotation_types.createMany({ data: DEFAULT_ROTATION_TYPES }); types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } }); }
@@ -374,8 +378,11 @@ app.get('/api/schedule', async (req, res) => {
     if (!month) return res.status(400).json({ error: 'month query param required (e.g. 2026-01)' });
     const [year, mon] = month.split('-').map(Number);
     try {
+        // Use UTC boundaries so entries stored at UTC midnight are always matched correctly
+        const gte = new Date(Date.UTC(year, mon - 1, 1));
+        const lte = new Date(Date.UTC(year, mon - 1, new Date(year, mon, 0).getDate(), 23, 59, 59, 999));
         const entries = await prisma.rotation_assignments.findMany({
-            where: { start_time: { gte: new Date(year, mon - 1, 1), lte: new Date(year, mon, 0, 23, 59, 59) } },
+            where: { start_time: { gte, lte } },
             orderBy: { start_time: 'asc' },
         });
         res.json(entries.map(e => ({ id: e.id, user_id: e.user_id, date: e.start_time.toISOString().split('T')[0], code: e.status_code })));
@@ -594,8 +601,53 @@ const seedSampleRotations = async () => {
 };
 
 // ── START SERVER ──────────────────────────────────────────────────────────────
+// Map rotation type names to their schedule codes (used for auto-migration)
+const ROTATION_TYPE_CODE_MAP = {
+    '24/7 spoc it services':    'IT',
+    '24/7 spoc cdo stewards':   'CD',
+    '24/7 spoc cdo escalation': 'ES',
+    'mountain time rotation':   'MT',
+    'working stat':             'WS',
+    'encana friday':            'EF',
+    'service desk':             'SD',
+};
+
+const migrateRotationTypesCodes = async () => {
+    try {
+        // Add code column to rotation_types if it doesn't exist yet
+        await prisma.$executeRawUnsafe(
+            `ALTER TABLE rotation_types ADD COLUMN IF NOT EXISTS code VARCHAR(10);`
+        );
+        // Add code column to rotations if it doesn't exist yet
+        await prisma.$executeRawUnsafe(
+            `ALTER TABLE rotations ADD COLUMN IF NOT EXISTS code VARCHAR(10);`
+        );
+        // Populate rotation_types.code for any row that still has NULL based on the name
+        const types = await prisma.$queryRaw`SELECT id, name FROM rotation_types WHERE code IS NULL`;
+        for (const t of types) {
+            const code = ROTATION_TYPE_CODE_MAP[(t.name || '').toLowerCase().trim()] || null;
+            if (code) {
+                await prisma.$executeRaw`UPDATE rotation_types SET code = ${code} WHERE id = ${t.id}`;
+            }
+        }
+        // Back-fill rotations.code from their rotation type for any existing rotations
+        await prisma.$executeRawUnsafe(`
+            UPDATE rotations r
+            SET code = rt.code
+            FROM rotation_types rt
+            WHERE r.rotation_type_id = rt.id
+              AND r.code IS NULL
+              AND rt.code IS NOT NULL;
+        `);
+        console.log('✅ rotation_types.code and rotations.code columns ensured.');
+    } catch (err) {
+        console.error('⚠️  rotation_types migration warning:', err.message);
+    }
+};
+
 app.listen(port, async () => {
     console.log(`🚀 CGI Scheduling Server live on http://localhost:${port}`);
+    await migrateRotationTypesCodes();
     await seedRoles();
     const result = await seedDefaultAdmin();
     if (result) console.log('🔑 Admin User Ready:', result.username);

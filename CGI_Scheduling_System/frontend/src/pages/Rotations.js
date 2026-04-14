@@ -1,5 +1,23 @@
 import React, { useEffect, useState } from 'react';
 
+// Schedule codes that map to canvas colours — matches MatrixView's CODE_COLORS
+const SCHEDULE_CODES = [
+    { code: 'IT', bg: '#ff00ff', color: '#fff', label: '24/7 SPOC IT Services' },
+    { code: 'CD', bg: '#ffff00', color: '#000', label: '24/7 SPOC CDO Stewards' },
+    { code: 'ES', bg: '#0099cc', color: '#fff', label: '24/7 SPOC CDO Escalation' },
+    { code: 'MT', bg: '#cc9900', color: '#fff', label: 'Mountain Time Rotation' },
+    { code: 'WS', bg: '#c55a11', color: '#fff', label: 'Working Stat' },
+    { code: 'EF', bg: '#e2efda', color: '#000', label: 'Encana Friday' },
+    { code: 'SD', bg: '#00ff00', color: '#000', label: 'Service Desk' },
+    { code: 'V',  bg: '#c00000', color: '#fff', label: 'Vacation' },
+    { code: 'A',  bg: '#00ccff', color: '#000', label: 'Absence' },
+    { code: 'MV', bg: '#7030a0', color: '#fff', label: 'Morning Vacation' },
+    { code: 'AV', bg: '#ff0066', color: '#fff', label: 'Afternoon Vacation' },
+    { code: 'PV', bg: '#ffc000', color: '#000', label: 'Pending Vacation' },
+    { code: 'CH', bg: '#fbe5d6', color: '#000', label: 'Canadian Holiday' },
+    { code: 'UH', bg: '#ddebf7', color: '#000', label: 'US Holiday' },
+];
+
 const INTERVAL_PRESET_OPTIONS = [
     { value: 'daily',    label: 'Daily',     unit: 'day',    count: 1 },
     { value: 'weekly',   label: 'Weekly',    unit: 'week',   count: 1 },
@@ -19,7 +37,7 @@ const getTodayDate = () => new Date().toISOString().split('T')[0];
 const buildDefaultRotationForm = () => {
     const today = getTodayDate();
     return {
-        rotation_type_id: '', name: '', team_id: '', location_id: '', start_date: today, end_date: today,
+        rotation_type_id: '', code: '', name: '', team_id: '', location_id: '', start_date: today, end_date: today,
         interval_unit: 'week', interval_count: 1, status: 'active', assigned_member_ids: [],
         notes: '', allow_double_booking: false, escalation_tiers: ''
     };
@@ -28,7 +46,7 @@ const buildDefaultRotationForm = () => {
 const DEFAULT_ROTATION_DELETE_CONFIRM = { open: false, rotationId: null, rotationName: '' };
 const DEFAULT_ROTATION_POPUP = { open: false, type: 'success', title: '', message: '' };
 
-const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, showNotification, userLookup, userIdLookup }) => {
+const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, showNotification, userLookup, userIdLookup, onRotationMutated }) => {
     // ── LOCAL STATE ──────────────────────────────────────────────────────────
     const [rotationFormData, setRotationFormData] = useState(buildDefaultRotationForm());
     const [rotationTypes, setRotationTypes] = useState([]);
@@ -256,6 +274,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
             setConflictWarning(null);
             setShowCreateRotationModal(false);
             showRotationPopupModal('success', isEditing ? 'Rotation updated' : 'Rotation created', isEditing ? 'Rotation updated successfully.' : 'Rotation created successfully.');
+            if (onRotationMutated) onRotationMutated();
         } catch { showRotationPopupModal('error', errorTitle, 'Network error. Please try again.'); }
     };
 
@@ -280,6 +299,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
             if (editingRotation?.id === rotationId) resetRotationForm();
             if (viewingRotation?.id === rotationId) closeViewRotation();
             showRotationPopupModal('success', 'Rotation deleted', `Rotation "${rotationName}" deleted successfully.`);
+            if (onRotationMutated) onRotationMutated();
         } catch { showRotationPopupModal('error', 'Unable to delete rotation', 'Network error. Please try again.'); }
     };
 
@@ -304,6 +324,7 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
 
         setRotationFormData({
             rotation_type_id: rotation.rotation_type_id ? String(rotation.rotation_type_id) : '',
+            code: rotation.code || '',
             name: rotation.name || '', team_id: rotation.team_id || '', location_id: '',
             start_date: rotation.start_date?.split('T')[0] || getTodayDate(),
             end_date: rotation.end_date?.split('T')[0] || rotation.start_date?.split('T')[0] || getTodayDate(),
@@ -448,14 +469,69 @@ const Rotations = ({ rotations, teams, users, isRotationAdmin, fetchRotations, s
                         <form onSubmit={handleSaveRotation}>
                             <div className="form-group">
                                 <label>Rotation Type <span style={{ color: '#6b7280', fontSize: '0.8rem', fontWeight: 400 }}>(optional)</span></label>
-                                <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => setRotationFormData(prev => ({ ...prev, rotation_type_id: e.target.value }))}>
-
+                                <select className="enterprise-input" value={rotationFormData.rotation_type_id} onChange={e => {
+                                    const typeId = e.target.value;
+                                    const matched = rotationTypes.find(t => String(t.id) === typeId);
+                                    setRotationFormData(prev => ({
+                                        ...prev,
+                                        rotation_type_id: typeId,
+                                        // Auto-fill the code from the type if no code is already set
+                                        code: prev.code || matched?.code || ''
+                                    }));
+                                }}>
                                     <option value="">
                                         {rotationTypesLoading ? 'Loading rotation types...' : rotationTypes.length === 0 ? 'No rotation types available' : 'Select rotation type'}
                                     </option>
-                                    {rotationTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
+                                    {rotationTypes.map(type => (
+                                        <option key={type.id} value={type.id}>
+                                            {type.name}{type.code ? ` [${type.code}]` : ''}
+                                        </option>
+                                    ))}
                                 </select>
                                 {rotationTypesError && <p style={{ margin: '0.35rem 0 0', color: '#e31937', fontSize: '0.75rem' }}>{rotationTypesError}</p>}
+                            </div>
+
+                            {/* Schedule Code picker */}
+                            <div className="form-group">
+                                <label>Schedule Code <span style={{ color: '#e31937' }}>*</span> <span style={{ color: '#6b7280', fontSize: '0.8rem', fontWeight: 400 }}>— determines the colour shown in the canvas</span></label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
+                                    {SCHEDULE_CODES.map(({ code, bg, color, label }) => {
+                                        const selected = rotationFormData.code === code;
+                                        return (
+                                            <button
+                                                key={code}
+                                                type="button"
+                                                title={label}
+                                                onClick={() => setRotationFormData(prev => ({ ...prev, code: selected ? '' : code }))}
+                                                style={{
+                                                    background: bg,
+                                                    color,
+                                                    border: selected ? '3px solid #111827' : '2px solid transparent',
+                                                    borderRadius: '5px',
+                                                    padding: '0.25rem 0.55rem',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.78rem',
+                                                    cursor: 'pointer',
+                                                    outline: selected ? '2px solid #fff' : 'none',
+                                                    outlineOffset: '-4px',
+                                                    boxShadow: selected ? '0 0 0 3px #111827' : '0 1px 3px rgba(0,0,0,0.15)',
+                                                    minWidth: 36,
+                                                    textAlign: 'center',
+                                                }}
+                                            >
+                                                {code}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {rotationFormData.code ? (
+                                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: '#374151' }}>
+                                        Selected: <strong style={{ background: SCHEDULE_CODES.find(c => c.code === rotationFormData.code)?.bg, color: SCHEDULE_CODES.find(c => c.code === rotationFormData.code)?.color, padding: '1px 7px', borderRadius: 4 }}>{rotationFormData.code}</strong>{' '}
+                                        {SCHEDULE_CODES.find(c => c.code === rotationFormData.code)?.label}
+                                    </p>
+                                ) : (
+                                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: '#d97706' }}>No code selected — members will not appear in the canvas schedule.</p>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label>Rotation Name <span style={{ color: '#e31937' }}>*</span></label>

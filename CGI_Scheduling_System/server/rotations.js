@@ -21,17 +21,36 @@ const getStatusCode = (rotationTypeName) => {
     return ROTATION_TYPE_CODE_MAP[rotationTypeName.toLowerCase().trim()] || null;
 };
 
+// Reads the code for a rotation type, preferring the `code` column stored in the DB
+// (populated by the server startup migration) over the hardcoded name map.
+const getRotationTypeCode = async (rotationTypeId) => {
+    if (!rotationTypeId) return null;
+    try {
+        const rows = await prisma.$queryRaw`
+            SELECT code, name FROM rotation_types WHERE id = ${rotationTypeId} LIMIT 1
+        `;
+        const row = rows[0];
+        if (!row) return null;
+        // Prefer explicit code column; fall back to name-based map
+        return row.code || getStatusCode(row.name);
+    } catch {
+        return null;
+    }
+};
+
 const generateAssignments = async (rotationId, memberIds, startDate, endDate, statusCode) => {
     if (!statusCode || !memberIds.length || !startDate || !endDate) return;
     const assignments = [];
+    // Use UTC midnight so the stored timestamp always produces the correct date when
+    // converted back with toISOString().split('T')[0] — regardless of server timezone.
     const cur = new Date(startDate);
     const end = new Date(endDate);
-    cur.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
+    cur.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(0, 0, 0, 0);
     while (cur <= end) {
         const dayStart = new Date(cur);
         const dayEnd = new Date(cur);
-        dayEnd.setHours(23, 59, 59, 999);
+        dayEnd.setUTCHours(23, 59, 59, 999);
         for (const userId of memberIds) {
             assignments.push({
                 rotation_id: rotationId,
@@ -43,7 +62,7 @@ const generateAssignments = async (rotationId, memberIds, startDate, endDate, st
                 slot: 'full',
             });
         }
-        cur.setDate(cur.getDate() + 1);
+        cur.setUTCDate(cur.getUTCDate() + 1);
     }
     if (assignments.length) {
         await prisma.rotation_assignments.createMany({ data: assignments });
@@ -165,6 +184,8 @@ const parseRotationPayload = (payload) => {
     const status = payload.status || 'active';
     const allowDoubleBooking = Boolean(payload.allow_double_booking);
     const notes = payload.notes ? String(payload.notes).trim() : '';
+    // Schedule code: directly assigned on the rotation (overrides the rotation type's code)
+    const code = payload.code ? String(payload.code).trim().toUpperCase() : null;
     const { ids: assignedMemberIds, invalid: invalidMemberIds } = parseIdArray(
         payload.assigned_member_ids
     );
@@ -192,6 +213,10 @@ const parseRotationPayload = (payload) => {
 
     return {
         errors,
+        // rotationCode is kept separate so it is never passed into Prisma's
+        // model API (the generated client predates the code column).
+        // It is written via $executeRaw after create/update.
+        rotationCode: code || null,
         data: {
             name,
             rotation_type_id: rotationTypeId,
@@ -327,14 +352,13 @@ const checkDoubleBooking = async (rotationId, memberIds, startDate, endDate) => 
 router.get('/', async (req, res) => {
     try {
         const rotations = await prisma.rotations.findMany({
-            include: {
-                rotation_types: true,
-                teams: true,
-                locations: true,
-            },
+            include: { rotation_types: true, teams: true, locations: true },
             orderBy: { id: 'asc' },
         });
-        res.json(rotations);
+        // Merge in the code column (written via raw SQL; not yet in generated client)
+        const codRows = await prisma.$queryRaw`SELECT id, code FROM rotations`;
+        const codeMap = Object.fromEntries(codRows.map(r => [Number(r.id), r.code || null]));
+        res.json(rotations.map(r => ({ ...r, code: codeMap[r.id] ?? null })));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -368,7 +392,7 @@ router.get('/:id', async (req, res) => {
 
 // CREATE
 router.post('/', async (req, res) => {
-    const { errors, data } = parseRotationPayload(req.body);
+    const { errors, data, rotationCode } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
     if (data.rotation_type_id !== null) {
@@ -400,13 +424,16 @@ router.post('/', async (req, res) => {
         const rotation = await prisma.rotations.create({ data });
         await logAction(null, 'rotation_created', 'rotation', rotation.id, null, rotation);
 
-        const rotationType = await prisma.rotation_types.findUnique({
-            where: { id: data.rotation_type_id },
-            select: { name: true },
-        });
-        await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, getStatusCode(rotationType?.name));
+        // Persist the code via raw SQL (Prisma client predates this column)
+        if (rotationCode) {
+            await prisma.$executeRaw`UPDATE rotations SET code = ${rotationCode} WHERE id = ${rotation.id}`;
+        }
 
-        res.status(201).json(rotation);
+        // Rotation's own code takes priority; fall back to the type's code
+        const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
+        await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+
+        res.status(201).json({ ...rotation, code: rotationCode });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -415,7 +442,7 @@ router.post('/', async (req, res) => {
 // UPDATE
 router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
-    const { errors, data } = parseRotationPayload(req.body);
+    const { errors, data, rotationCode } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
     if (data.rotation_type_id !== null) {
@@ -457,15 +484,16 @@ router.put('/:id', async (req, res) => {
         const updated = await prisma.rotations.update({ where: { id }, data });
         await logAction(null, 'rotation_updated', 'rotation', id, existing, updated);
 
+        // Persist the code via raw SQL (Prisma client predates this column)
+        await prisma.$executeRaw`UPDATE rotations SET code = ${rotationCode} WHERE id = ${id}`;
+
         // Regenerate schedule assignments from the new rotation definition
         await prisma.rotation_assignments.deleteMany({ where: { rotation_id: id } });
-        const rotationType = await prisma.rotation_types.findUnique({
-            where: { id: data.rotation_type_id },
-            select: { name: true },
-        });
-        await generateAssignments(id, data.assigned_member_ids, data.start_date, data.end_date, getStatusCode(rotationType?.name));
+        // Rotation's own code takes priority; fall back to the type's code
+        const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
+        await generateAssignments(id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
 
-        res.json(updated);
+        res.json({ ...updated, code: rotationCode });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

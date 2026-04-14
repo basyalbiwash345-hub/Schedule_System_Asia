@@ -82,6 +82,7 @@ model rotation_assignments {
 model rotation_types {
   id                    Int           @id @default(autoincrement())
   name                  String        @db.VarChar(255)
+  code                  String?       @db.VarChar(10)
   default_interval_unit interval_type
   rotations             rotations[]
 }
@@ -92,6 +93,7 @@ model rotations {
   rotation_type_id     Int?
   team_id              Int?
   location_id          Int?
+  code                 String?                @db.VarChar(10)
   start_date           DateTime               @db.Date
   end_date             DateTime               @db.Date
   interval_unit        interval_type

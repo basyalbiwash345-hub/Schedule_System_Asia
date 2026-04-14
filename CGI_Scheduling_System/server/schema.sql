@@ -74,6 +74,7 @@ CREATE TABLE user_roles (
 CREATE TABLE rotation_types (
                                 id SERIAL PRIMARY KEY,
                                 name VARCHAR(255) NOT NULL,
+                                code VARCHAR(10),
                                 default_interval_unit interval_type NOT NULL
 );
 

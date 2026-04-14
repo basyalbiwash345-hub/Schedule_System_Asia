@@ -294,6 +294,7 @@ function App() {
                     showNotification={showNotification}
                     userLookup={userLookup}
                     userIdLookup={userIdLookup}
+                    onRotationMutated={triggerMatrixRefresh}
                 />
             );
         }
