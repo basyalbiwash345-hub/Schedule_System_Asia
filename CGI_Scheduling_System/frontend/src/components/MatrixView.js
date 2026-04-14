@@ -263,7 +263,7 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
 // Self-contained: owns its own wrapper div, measures itself, manages scroll state.
 // Parent only needs to supply data + callbacks.
 const CanvasGrid = React.memo(({
-                                   dates, grouped, schedule, activeCode, highlightCode,
+                                   dates, grouped, schedule, rotations, activeCode, highlightCode,
                                    conflictKeys,
                                    onCellAction, onCellDoubleClick,
                                }) => {
@@ -657,6 +657,36 @@ const CanvasGrid = React.memo(({
             const code  = entry?.code?.toUpperCase();
             const cfg   = code ? CODE_COLORS[code] : null;
             const rect  = wrapperRef.current?.getBoundingClientRect();
+
+            // Find the rotation whose date range covers this cell and matches the code.
+            // A rotation's effective code is: its own `code` column first, then its
+            // rotation_type's code (e.g. MT for Mountain Time), then the type name map.
+            const empStr = String(hit.empId);
+            const ROTATION_TYPE_CODE_MAP = {
+                '24/7 spoc it services':    'IT',
+                '24/7 spoc cdo stewards':   'CD',
+                '24/7 spoc cdo escalation': 'ES',
+                'mountain time rotation':   'MT',
+                'working stat':             'WS',
+                'encana friday':            'EF',
+                'service desk':             'SD',
+            };
+            const matchedRotation = Array.isArray(rotations) ? rotations.find(r => {
+                const members = Array.isArray(r.assigned_member_ids) ? r.assigned_member_ids : [];
+                if (!members.map(String).includes(empStr)) return false;
+                if (code) {
+                    const rotCode =
+                        r.code?.toUpperCase() ||
+                        r.rotation_types?.code?.toUpperCase() ||
+                        ROTATION_TYPE_CODE_MAP[(r.rotation_types?.name || '').toLowerCase().trim()];
+                    // If we can resolve a code and it doesn't match, skip this rotation
+                    if (rotCode && rotCode !== code) return false;
+                }
+                const rStart = r.start_date?.split('T')[0];
+                const rEnd   = (r.end_date || r.start_date)?.split('T')[0];
+                return hit.date >= rStart && hit.date <= rEnd;
+            }) : null;
+
             setTooltip({
                 x: e.clientX - (rect?.left || 0) + 12,
                 y: e.clientY - (rect?.top  || 0) + 12,
@@ -666,6 +696,7 @@ const CanvasGrid = React.memo(({
                 label: cfg?.label || null,
                 bg: cfg?.bg || null,
                 color: cfg?.color || null,
+                rotationName: matchedRotation?.name || null,
             });
         } else {
             setTooltip(null);
@@ -675,7 +706,7 @@ const CanvasGrid = React.memo(({
             onCellAction(hit.key,hit.empId,hit.date,hit.empName);
             dragRef.current.lastKey=hit.key; needsDraw.current=true;
         }
-    },[hitTest,activeCode,onCellAction,schedule]);
+    },[hitTest,activeCode,onCellAction,schedule,rotations]);
 
     const handlePointerUp=useCallback(()=>{ dragRef.current=null; scrollDragRef.current=null; },[]);
     const handlePointerLeave=useCallback(()=>{ hoverRef.current=null; dragRef.current=null; scrollDragRef.current=null; needsDraw.current=true; setTooltip(null); },[]);
@@ -758,8 +789,13 @@ const CanvasGrid = React.memo(({
                     ) : (
                         <div style={{ fontSize:'0.72rem', color:'#6b7280', fontStyle:'italic' }}>No entry</div>
                     )}
+                    {tooltip.rotationName && (
+                        <div style={{ fontSize:'0.7rem', color:'#d1d5db', marginTop:5, paddingTop:4, borderTop:'1px solid #374151' }}>
+                            {tooltip.rotationName}
+                        </div>
+                    )}
                     {!activeCode && (
-                        <div style={{ fontSize:'0.65rem', color:'#6b7280', marginTop:5, borderTop:'1px solid #374151', paddingTop:4 }}>
+                        <div style={{ fontSize:'0.65rem', color:'#6b7280', marginTop: tooltip.rotationName ? 3 : 5, borderTop: tooltip.rotationName ? 'none' : '1px solid #374151', paddingTop: tooltip.rotationName ? 0 : 4 }}>
                             Double-click to edit
                         </div>
                     )}
@@ -1003,10 +1039,12 @@ export default function MatrixView({ refreshKey = 0 }) {
         // Clear the schedule cache so new members' rows get their schedule re-fetched
         setFetchedMonths(new Set());
         dispatchSchedule({ type: 'RESET' });
+        const token = localStorage.getItem('token');
+        const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
         Promise.all([
             fetch('/api/matrix-users').then(r=>r.json()).catch(()=>[]),
             fetch('/api/teams').then(r=>r.json()).catch(()=>[]),
-            fetch('/api/rotations').then(r=>r.json()).catch(()=>[]),
+            fetch('/api/rotations', { headers: authHeader }).then(r=>r.json()).catch(()=>[]),
         ]).then(([emps,tms,rots]) => {
             setEmployees(Array.isArray(emps)?emps:[]);
             setTeams(Array.isArray(tms)?tms:[]);
@@ -1468,6 +1506,7 @@ export default function MatrixView({ refreshKey = 0 }) {
                         dates={dates}
                         grouped={grouped}
                         schedule={filteredSchedule}
+                        rotations={rotations}
                         activeCode={activeCode}
                         highlightCode={highlightCode}
                         conflictKeys={conflictKeys}
