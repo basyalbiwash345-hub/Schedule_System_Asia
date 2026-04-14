@@ -106,6 +106,15 @@ function App() {
         setActivePage(getDefaultPageForUser(currentUser));
     }, [isLoggedIn, currentUser, activePage]);
 
+    // Re-fetch rotations every time the user navigates to the Rotations page so
+    // any changes made in the Matrix view (which creates rotations server-side)
+    // are reflected immediately without requiring a full page refresh.
+    useEffect(() => {
+        if (activePage === 'Rotations' && isLoggedIn && shouldLoadRotations) {
+            fetchRotations();
+        }
+    }, [activePage]);
+
     const fetchUsers = async () => {
         try {
             // ADD THIS LINE: Get the token
