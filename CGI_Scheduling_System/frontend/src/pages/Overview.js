@@ -76,7 +76,7 @@ const buildRotationEvent = (rotation) => {
 
 const buildScheduleEvent = (entry, getUserTeam) => {
     const date = parseDate(entry.date);
-    const teamName = getUserTeam(entry.user_id) || 'Unknown Team';
+    const teamName = getUserTeam(entry.user_id) || 'Unassigned';
     return {
         id: `schedule-${entry.id}`,
         title: teamName,
@@ -117,6 +117,7 @@ const getDateKeysForEvent = (event) => {
 };
 
 const Overview = ({ users = [] }) => {
+    const [matrixUsers, setMatrixUsers] = useState([]);
     const [rotations, setRotations] = useState([]);
     const [scheduleEvents, setScheduleEvents] = useState([]);
     const [holidays, setHolidays] = useState([]);
@@ -139,16 +140,29 @@ const Overview = ({ users = [] }) => {
 
     const getUserTeam = useMemo(() => {
         return (userId) => {
-            const user = users.find((u) => String(u.id) === String(userId) || String(u.user_id) === String(userId));
+            // First try matrix users (has complete team data from matrix-users endpoint)
+            let user = matrixUsers.find((u) => String(u.id) === String(userId) || String(u.user_id) === String(userId));
+            
+            // Fallback to regular users if not found
+            if (!user) {
+                user = users.find((u) => String(u.id) === String(userId) || String(u.user_id) === String(userId));
+            }
+            
             if (!user) return null;
+            
+            // Try to find team name from teams array
             if (user.teams && Array.isArray(user.teams) && user.teams.length > 0) {
                 return user.teams[0].name || user.teams[0];
             }
+            
+            // Try single team property variations
             if (typeof user.team === 'string') return user.team;
             if (user.team?.name) return user.team.name;
+            
+            // If no team found, return null (will show as 'Unassigned')
             return null;
         };
-    }, [users]);
+    }, [matrixUsers, users]);
 
     const monthsToFetch = useMemo(() => {
         const monthKeys = new Set();
@@ -162,6 +176,22 @@ const Overview = ({ users = [] }) => {
     useEffect(() => {
         const token = localStorage.getItem('token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+        const fetchMatrixUsers = async () => {
+            console.log('Overview: fetching /api/matrix-users');
+            try {
+                const response = await fetch('/api/matrix-users', { headers });
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Overview: matrix-users response', data);
+                    setMatrixUsers(Array.isArray(data) ? data : []);
+                } else {
+                    console.warn('Matrix users fetch failed:', response.status);
+                }
+            } catch (err) {
+                console.warn('Matrix users fetch error:', err);
+            }
+        };
 
         const fetchRotations = async () => {
             console.log('Overview: fetching /api/rotations');
@@ -211,7 +241,7 @@ const Overview = ({ users = [] }) => {
             setLoading(true);
             setError('');
             try {
-                await Promise.all([fetchRotations(), fetchSchedule(), fetchHolidays()]);
+                await Promise.all([fetchMatrixUsers(), fetchRotations(), fetchSchedule(), fetchHolidays()]);
             } catch (err) {
                 console.error('Overview: data load error', err);
                 setError(err?.message || 'Unable to load overview data.');
