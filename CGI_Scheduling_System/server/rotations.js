@@ -434,10 +434,28 @@ router.post('/', async (req, res) => {
 
         // Rotation's own code takes priority; fall back to the type's code
         const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
-        // Skip assignment generation when the rotation was auto-created from the
-        // Matrix view — those rotation_assignments already exist via PUT /api/schedule.
+
         if (!fromMatrix) {
+            // Normal path: generate daily rotation_assignments for the date range.
             await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+        } else {
+            // Matrix path: rotation_assignments were already created by PUT /api/schedule
+            // with rotation_id = null.  Link them to this rotation now so that when
+            // the rotation is later deleted the cascade also removes those assignments,
+            // clearing the corresponding cells from the matrix view.
+            const rangeStart = new Date(data.start_date);
+            const rangeEnd   = new Date(data.end_date);
+            rangeStart.setUTCHours(0,  0,  0,   0);
+            rangeEnd.setUTCHours(23, 59, 59, 999);
+            await prisma.rotation_assignments.updateMany({
+                where: {
+                    user_id:     { in: data.assigned_member_ids },
+                    rotation_id: null,
+                    start_time:  { gte: rangeStart, lte: rangeEnd },
+                    ...(statusCode ? { status_code: statusCode } : {}),
+                },
+                data: { rotation_id: rotation.id },
+            });
         }
 
         res.status(201).json({ ...rotation, code: rotationCode });

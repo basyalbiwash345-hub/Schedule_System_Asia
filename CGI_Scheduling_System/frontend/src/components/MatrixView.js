@@ -874,11 +874,15 @@ export default function MatrixView({ refreshKey = 0 }) {
     const [schedule, dispatchSchedule] = useReducer(scheduleReducer, {});
 
     // ── Matrix → Rotation sync ─────────────────────────────────────────────────
-    // Keeps a live ref so flushDragSession always reads the latest employees list
-    // even though the callback itself has no deps (avoids stale closures).
-    const employeesRef  = useRef(employees);
+    // Live refs so callbacks always read the latest data without needing them as
+    // deps (avoids stale closures and unnecessary callback recreation).
+    const employeesRef = useRef(employees);
     useEffect(() => { employeesRef.current = employees; }, [employees]);
 
+    const rotationsRef = useRef(rotations);
+    useEffect(() => { rotationsRef.current = rotations; }, [rotations]);
+
+    // ── Paint session (creates rotations) ──────────────────────────────────────
     // Per-drag paint session: { [empId]: { empName, dates: Set<string>, code } }
     const dragSessionRef = useRef({});
     const dragTimerRef   = useRef(null);
@@ -913,9 +917,50 @@ export default function MatrixView({ refreshKey = 0 }) {
                     allow_double_booking: true,
                     from_matrix: true,
                 })
-            }).catch(() => {}); // fire-and-forget; silently ignore errors
+            }).catch(() => {}); // fire-and-forget
         }
     }, []); // stable — reads all dynamic data via refs
+
+    // ── Clear session (deletes rotations) ──────────────────────────────────────
+    // Finds every rotation that covers any cleared date for a given user + code
+    // and deletes it, keeping the Rotations page in sync with the matrix.
+    const deleteRotationsForCells = useCallback((empId, dates, code) => {
+        if (!code || !dates.length) return;
+        const token = localStorage.getItem('token');
+        const empStr = String(empId);
+        const toDelete = rotationsRef.current.filter(r => {
+            const members = Array.isArray(r.assigned_member_ids) ? r.assigned_member_ids : [];
+            if (!members.map(String).includes(empStr)) return false;
+            if (r.code?.toUpperCase() !== code.toUpperCase()) return false;
+            const rStart = r.start_date?.split('T')[0];
+            const rEnd   = (r.end_date || r.start_date)?.split('T')[0];
+            return dates.some(d => d >= rStart && d <= rEnd);
+        });
+        if (!toDelete.length) return;
+        // Remove from local rotations state immediately so the conflict overlay
+        // clears and rotationsRef stays fresh for subsequent operations.
+        const deletedIds = new Set(toDelete.map(r => r.id));
+        setRotations(prev => prev.filter(r => !deletedIds.has(r.id)));
+        for (const r of toDelete) {
+            fetch(`/api/rotations/${r.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            }).catch(() => {}); // fire-and-forget
+        }
+    }, []); // stable — reads rotationsRef and calls setRotations
+
+    // Per-drag clear session: { [empId]: { dates: Set<string>, code } }
+    const clearSessionRef = useRef({});
+    const clearTimerRef   = useRef(null);
+
+    // Fired 800 ms after the last cleared cell — deletes matching rotations.
+    const flushClearSession = useCallback(() => {
+        const session = { ...clearSessionRef.current };
+        clearSessionRef.current = {};
+        for (const [empId, { dates, code }] of Object.entries(session)) {
+            deleteRotationsForCells(empId, Array.from(dates), code);
+        }
+    }, [deleteRotationsForCells]);
 
     // ── Calendar anchor helpers ──────────────────────────────────────────────────
     // Week containing calendarAnchor (Sun–Sat)
@@ -1129,6 +1174,18 @@ export default function MatrixView({ refreshKey = 0 }) {
             dragTimerRef.current = setTimeout(flushDragSession, 800);
         }
 
+        // Track cleared cells so we can delete matching rotations once the
+        // user stops clearing (debounced 800 ms after the last cleared cell).
+        if (!newCode && existing) {
+            const empKey = String(empId);
+            if (!clearSessionRef.current[empKey]) {
+                clearSessionRef.current[empKey] = { dates: new Set(), code: existing };
+            }
+            clearSessionRef.current[empKey].dates.add(date);
+            clearTimeout(clearTimerRef.current);
+            clearTimerRef.current = setTimeout(flushClearSession, 800);
+        }
+
         // Optimistic update
         dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:newCode }] });
 
@@ -1162,7 +1219,7 @@ export default function MatrixView({ refreshKey = 0 }) {
         } catch {
             dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:existing||null }] });
         }
-    }, [activeCode, schedule, flushDragSession]);
+    }, [activeCode, schedule, flushDragSession, flushClearSession]);
 
     // Double-click → open modal
     const handleCellDoubleClick = useCallback((key, empId, date, empName) => setModal({ key, empId, date, empName }), []);
@@ -1212,12 +1269,15 @@ export default function MatrixView({ refreshKey = 0 }) {
     const handleModalDelete = useCallback(async () => {
         if (!modal) return;
         const { key, empId, date } = modal;
+        const existingCode = schedule[key]?.code?.toUpperCase();
         dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:null }] });
         const entry=schedule[key];
         if (entry?.id) await fetch(`/api/schedule/${entry.id}`,{ method:'DELETE' }).catch(()=>{});
         else await fetch('/api/schedule',{ method:'PUT', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ user_id:empId, date, code:'CLEAR' }) }).catch(()=>{});
+        // Delete any matching rotation from the Rotations page
+        if (existingCode) deleteRotationsForCells(empId, [date], existingCode);
         setModal(null);
-    }, [modal, schedule]);
+    }, [modal, schedule, deleteRotationsForCells]);
 
     const allEmps = useMemo(()=>Object.values(grouped).flat(), [grouped]);
     const modalEntry = modal ? schedule[modal.key] : null;
