@@ -205,8 +205,7 @@ const parseRotationPayload = (payload) => {
         errors.push('Interval count must be at least 1.');
     if (!ALLOWED_STATUS.has(status)) errors.push('Status is invalid.');
 
-    if (teamId === null) errors.push('Assigned team is required.');
-
+    // team_id is optional when the rotation is auto-created from the matrix view
     if (invalidMemberIds) errors.push('Assigned members list is invalid.');
     if (!assignedMemberIds.length)
         errors.push('Assigned members are required.');
@@ -392,6 +391,10 @@ router.get('/:id', async (req, res) => {
 
 // CREATE
 router.post('/', async (req, res) => {
+    // When auto-created from the Matrix view the schedule assignments already
+    // exist (written by PUT /api/schedule), so we must not create them again.
+    const fromMatrix = Boolean(req.body.from_matrix);
+
     const { errors, data, rotationCode } = parseRotationPayload(req.body);
     if (errors.length) return res.status(400).json({ errors });
 
@@ -431,7 +434,11 @@ router.post('/', async (req, res) => {
 
         // Rotation's own code takes priority; fall back to the type's code
         const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
-        await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+        // Skip assignment generation when the rotation was auto-created from the
+        // Matrix view — those rotation_assignments already exist via PUT /api/schedule.
+        if (!fromMatrix) {
+            await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+        }
 
         res.status(201).json({ ...rotation, code: rotationCode });
     } catch (err) {

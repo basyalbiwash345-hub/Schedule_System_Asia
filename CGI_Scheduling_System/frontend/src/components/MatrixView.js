@@ -873,6 +873,50 @@ export default function MatrixView({ refreshKey = 0 }) {
 
     const [schedule, dispatchSchedule] = useReducer(scheduleReducer, {});
 
+    // ── Matrix → Rotation sync ─────────────────────────────────────────────────
+    // Keeps a live ref so flushDragSession always reads the latest employees list
+    // even though the callback itself has no deps (avoids stale closures).
+    const employeesRef  = useRef(employees);
+    useEffect(() => { employeesRef.current = employees; }, [employees]);
+
+    // Per-drag paint session: { [empId]: { empName, dates: Set<string>, code } }
+    const dragSessionRef = useRef({});
+    const dragTimerRef   = useRef(null);
+
+    // Fired 800 ms after the last painted cell — creates one rotation per user
+    // covering the full range of dates they painted in this drag session.
+    const flushDragSession = useCallback(() => {
+        const session = { ...dragSessionRef.current };
+        dragSessionRef.current = {};
+        const token = localStorage.getItem('token');
+        const currentEmployees = employeesRef.current;
+
+        for (const [empId, { empName, dates, code }] of Object.entries(session)) {
+            if (!dates.size || !code) continue;
+            const sortedDates = Array.from(dates).sort();
+            const emp = currentEmployees.find(e => String(e.id) === empId);
+            const teamId = emp?.teams?.[0]?.id ?? null;
+
+            fetch('/api/rotations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: `${code} \u2014 ${empName}`,
+                    code,
+                    team_id: teamId,
+                    start_date: sortedDates[0],
+                    end_date: sortedDates[sortedDates.length - 1],
+                    interval_unit: 'day',
+                    interval_count: 1,
+                    assigned_member_ids: [Number(empId)],
+                    status: 'active',
+                    allow_double_booking: true,
+                    from_matrix: true,
+                })
+            }).catch(() => {}); // fire-and-forget; silently ignore errors
+        }
+    }, []); // stable — reads all dynamic data via refs
+
     // ── Calendar anchor helpers ──────────────────────────────────────────────────
     // Week containing calendarAnchor (Sun–Sat)
     const calendarWeekDates = useMemo(() => {
@@ -1073,6 +1117,18 @@ export default function MatrixView({ refreshKey = 0 }) {
         const existing = schedule[key]?.code?.toUpperCase();
         const newCode  = (activeCode === 'CLEAR' || existing === activeCode) ? null : activeCode;
 
+        // Track painted cells so we can create a matching rotation once the
+        // user stops painting (debounced 800 ms after the last painted cell).
+        if (newCode) {
+            const empKey = String(empId);
+            if (!dragSessionRef.current[empKey]) {
+                dragSessionRef.current[empKey] = { empName, dates: new Set(), code: newCode };
+            }
+            dragSessionRef.current[empKey].dates.add(date);
+            clearTimeout(dragTimerRef.current);
+            dragTimerRef.current = setTimeout(flushDragSession, 800);
+        }
+
         // Optimistic update
         dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:newCode }] });
 
@@ -1106,7 +1162,7 @@ export default function MatrixView({ refreshKey = 0 }) {
         } catch {
             dispatchSchedule({ type:'SET_CELLS', updates:[{ key, code:existing||null }] });
         }
-    }, [activeCode, schedule]);
+    }, [activeCode, schedule, flushDragSession]);
 
     // Double-click → open modal
     const handleCellDoubleClick = useCallback((key, empId, date, empName) => setModal({ key, empId, date, empName }), []);
@@ -1120,6 +1176,35 @@ export default function MatrixView({ refreshKey = 0 }) {
         const updates = rangeDates.map(d=>({ key:`${empId}_${d}`, code:code==='CLEAR'?null:code, meta:{ title, status, notes } }));
         dispatchSchedule({ type:'SET_CELLS', updates });
         await Promise.all(rangeDates.map(d=>fetch('/api/schedule',{ method:'PUT', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ user_id:empId, date:d, code }) }).catch(()=>{})));
+
+        // Sync to Rotations page: create a rotation covering the saved date range.
+        if (code && code !== 'CLEAR') {
+            const empName = modal.empName || employeesRef.current.find(e=>String(e.id)===String(empId))?.name || `User ${empId}`;
+            const emp = employeesRef.current.find(e => String(e.id) === String(empId));
+            const teamId = emp?.teams?.[0]?.id ?? null;
+            const token = localStorage.getItem('token');
+            const actualStart = startDate || date;
+            const actualEnd   = endDate   || date;
+            fetch('/api/rotations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: `${code} \u2014 ${empName}`,
+                    code,
+                    team_id: teamId,
+                    start_date: actualStart,
+                    end_date:   actualEnd,
+                    interval_unit: 'day',
+                    interval_count: 1,
+                    assigned_member_ids: [Number(empId)],
+                    status: 'active',
+                    allow_double_booking: true,
+                    from_matrix: true,
+                    notes: notes || '',
+                })
+            }).catch(() => {}); // fire-and-forget
+        }
+
         setModal(null);
     }, [modal]);
 

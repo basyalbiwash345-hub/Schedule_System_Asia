@@ -1,6 +1,12 @@
 import React from 'react';
 
-const Overview = ({ currentUser, teams, rotations, users, isUserAdmin, getTeamDisplayMembers, formatIntervalLabel }) => {
+const formatIntervalLabel = (unit, count) => {
+    const base = { day: 'Daily', week: 'Weekly', biweek: 'Bi-Weekly', month: 'Monthly' }[unit] || unit;
+    if (!count || count === 1) return base;
+    return `Every ${count} ${unit === 'biweek' ? 'bi-week' : unit}${count > 1 ? 's' : ''}`;
+};
+
+const Overview = ({ currentUser, teams, rotations, users, isUserAdmin, getTeamDisplayMembers }) => {
     const myTeams = teams.filter(t => currentUser?.teams?.includes(t.id));
     // Find all rotations the current user is assigned to
     const myRotations = rotations.filter(r => {
