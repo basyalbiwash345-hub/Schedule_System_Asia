@@ -37,6 +37,20 @@ const authorizeAdmin = (req, res, next) => {
     } catch (err) { res.status(401).json({ error: 'Token is not valid' }); }
 };
 
+// Allows Administrators and Team Leads to create/edit teams
+const authorizeTeamManager = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const allowed = ['Administrator', 'Team Lead / Supervisor'];
+        if (!decoded.roles.some(r => allowed.includes(r))) return res.status(403).json({ error: 'Access denied: Team Leads and Admins only' });
+        req.user = decoded;
+        next();
+    } catch (err) { res.status(401).json({ error: 'Token is not valid' }); }
+};
+
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token, authorization denied' });
@@ -323,7 +337,7 @@ app.get('/api/teams', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/teams', authorizeAdmin, async (req, res) => {
+app.post('/api/teams', authorizeTeamManager, async (req, res) => {
     const { name, color, leadId, members, description } = req.body;
     try {
         const memberIds = new Set(members ? members.map(id => parseInt(id)) : []);
@@ -341,7 +355,7 @@ app.post('/api/teams', authorizeAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Failed to create team.' }); }
 });
 
-app.put('/api/teams/:id', authorizeAdmin, async (req, res) => {
+app.put('/api/teams/:id', authorizeTeamManager, async (req, res) => {
     const { id } = req.params;
     const { name, color, leadId, members, description } = req.body;
     try {
