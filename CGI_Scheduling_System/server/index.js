@@ -375,11 +375,12 @@ app.get('/api/schedule', async (req, res) => {
     if (!month) return res.status(400).json({ error: 'month query param required (e.g. 2026-01)' });
     const [year, mon] = month.split('-').map(Number);
     try {
-        // Use UTC boundaries so entries stored at UTC midnight are always matched correctly
+        // Use UTC boundaries so entries stored at UTC midnight are always matched correctly.
+        // Exclude any stale 'CLEAR' rows that may have been written before the delete-on-clear fix.
         const gte = new Date(Date.UTC(year, mon - 1, 1));
         const lte = new Date(Date.UTC(year, mon - 1, new Date(year, mon, 0).getDate(), 23, 59, 59, 999));
         const entries = await prisma.rotation_assignments.findMany({
-            where: { start_time: { gte, lte } },
+            where: { start_time: { gte, lte }, NOT: { status_code: 'CLEAR' } },
             orderBy: { start_time: 'asc' },
         });
         res.json(entries.map(e => ({ id: e.id, user_id: e.user_id, date: e.start_time.toISOString().split('T')[0], code: e.status_code })));
@@ -390,11 +391,26 @@ app.put('/api/schedule', async (req, res) => {
     const { user_id, date, code } = req.body;
     if (!user_id || !date || !code) return res.status(400).json({ error: 'user_id, date, and code are required.' });
     const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd   = new Date(date + 'T23:59:59.999Z');
     try {
-        const existing = await prisma.rotation_assignments.findFirst({ where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: new Date(date + 'T23:59:59.999Z') } } });
+        const existing = await prisma.rotation_assignments.findFirst({
+            where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } },
+        });
+
+        // CLEAR means "remove the entry" — delete if it exists, otherwise no-op.
+        if (code === 'CLEAR') {
+            if (existing) await prisma.rotation_assignments.delete({ where: { id: existing.id } });
+            return res.json({ user_id: Number(user_id), date, code: null });
+        }
+
         let entry;
-        if (existing) entry = await prisma.rotation_assignments.update({ where: { id: existing.id }, data: { status_code: code } });
-        else entry = await prisma.rotation_assignments.create({ data: { user_id: Number(user_id), start_time: dayStart, end_time: new Date(date + 'T23:59:59.999Z'), status_code: code, status: 'scheduled', slot: 'full' } });
+        if (existing) {
+            entry = await prisma.rotation_assignments.update({ where: { id: existing.id }, data: { status_code: code } });
+        } else {
+            entry = await prisma.rotation_assignments.create({
+                data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code, status: 'scheduled', slot: 'full' },
+            });
+        }
         res.json({ id: entry.id, user_id: entry.user_id, date, code: entry.status_code });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -38,32 +38,65 @@ const getRotationTypeCode = async (rotationTypeId) => {
     }
 };
 
-const generateAssignments = async (rotationId, memberIds, startDate, endDate, statusCode) => {
+// Advance a UTC date by one interval slot.
+const advanceByInterval = (date, intervalUnit, intervalCount) => {
+    const next = new Date(date);
+    if      (intervalUnit === 'day')    next.setUTCDate(next.getUTCDate() + intervalCount);
+    else if (intervalUnit === 'week')   next.setUTCDate(next.getUTCDate() + intervalCount * 7);
+    else if (intervalUnit === 'biweek') next.setUTCDate(next.getUTCDate() + intervalCount * 14);
+    else if (intervalUnit === 'month')  next.setUTCMonth(next.getUTCMonth() + intervalCount);
+    else                                next.setUTCDate(next.getUTCDate() + 1); // safe fallback
+    return next;
+};
+
+// Generates rotation_assignments by cycling through memberIds one slot at a time.
+// Each slot is `intervalUnit × intervalCount` wide.  When there are more slots
+// than members the list wraps around (e.g. 3 members over 6 weekly slots →
+// member[0], member[1], member[2], member[0], member[1], member[2]).
+const generateAssignments = async (rotationId, memberIds, startDate, endDate, statusCode, intervalUnit = 'day', intervalCount = 1) => {
     if (!statusCode || !memberIds.length || !startDate || !endDate) return;
+
     const assignments = [];
-    // Use UTC midnight so the stored timestamp always produces the correct date when
-    // converted back with toISOString().split('T')[0] — regardless of server timezone.
-    const cur = new Date(startDate);
-    const end = new Date(endDate);
-    cur.setUTCHours(0, 0, 0, 0);
-    end.setUTCHours(0, 0, 0, 0);
-    while (cur <= end) {
-        const dayStart = new Date(cur);
-        const dayEnd = new Date(cur);
-        dayEnd.setUTCHours(23, 59, 59, 999);
-        for (const userId of memberIds) {
+    // Cap at UTC 23:59:59.999 so the final day is always included.
+    const rotationEnd = new Date(endDate);
+    rotationEnd.setUTCHours(23, 59, 59, 999);
+
+    let slotStart = new Date(startDate);
+    slotStart.setUTCHours(0, 0, 0, 0);
+    let slotIndex = 0;
+
+    while (slotStart <= rotationEnd) {
+        // Work out where this slot ends (exclusive next-slot-start, capped at rotation end).
+        const nextSlotStart = advanceByInterval(slotStart, intervalUnit, intervalCount);
+        nextSlotStart.setUTCHours(0, 0, 0, 0);
+        const slotEnd = new Date(Math.min(nextSlotStart.getTime() - 1, rotationEnd.getTime()));
+
+        // The member for this slot — cycles back to member[0] after the last member.
+        const userId = memberIds[slotIndex % memberIds.length];
+
+        // Create one assignment per calendar day inside this slot.
+        const cur = new Date(slotStart);
+        while (cur <= slotEnd) {
+            const dayStart = new Date(cur);
+            dayStart.setUTCHours(0, 0, 0, 0);
+            const dayEnd = new Date(cur);
+            dayEnd.setUTCHours(23, 59, 59, 999);
             assignments.push({
                 rotation_id: rotationId,
-                user_id: userId,
-                start_time: new Date(dayStart),
-                end_time: new Date(dayEnd),
+                user_id:     userId,
+                start_time:  new Date(dayStart),
+                end_time:    new Date(dayEnd),
                 status_code: statusCode,
-                status: 'scheduled',
-                slot: 'full',
+                status:      'scheduled',
+                slot:        'full',
             });
+            cur.setUTCDate(cur.getUTCDate() + 1);
         }
-        cur.setUTCDate(cur.getUTCDate() + 1);
+
+        slotStart = nextSlotStart;
+        slotIndex++;
     }
+
     if (assignments.length) {
         await prisma.rotation_assignments.createMany({ data: assignments });
     }
@@ -436,8 +469,8 @@ router.post('/', async (req, res) => {
         const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
 
         if (!fromMatrix) {
-            // Normal path: generate daily rotation_assignments for the date range.
-            await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+            // Normal path: generate cycling rotation_assignments for the date range.
+            await generateAssignments(rotation.id, data.assigned_member_ids, data.start_date, data.end_date, statusCode, data.interval_unit, data.interval_count || 1);
         } else {
             // Matrix path: rotation_assignments were already created by PUT /api/schedule
             // with rotation_id = null.  Link them to this rotation now so that when
@@ -516,7 +549,7 @@ router.put('/:id', async (req, res) => {
         await prisma.rotation_assignments.deleteMany({ where: { rotation_id: id } });
         // Rotation's own code takes priority; fall back to the type's code
         const statusCode = rotationCode || await getRotationTypeCode(data.rotation_type_id);
-        await generateAssignments(id, data.assigned_member_ids, data.start_date, data.end_date, statusCode);
+        await generateAssignments(id, data.assigned_member_ids, data.start_date, data.end_date, statusCode, data.interval_unit, data.interval_count || 1);
 
         res.json({ ...updated, code: rotationCode });
     } catch (err) {
