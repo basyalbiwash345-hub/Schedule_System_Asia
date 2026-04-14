@@ -303,11 +303,8 @@ const DEFAULT_ROTATION_TYPES = [
     { name: 'New',                      code: null, default_interval_unit: 'week' },
 ];
 
-<<<<<<< Updated upstream
-app.get('/api/rotation-types', authenticateToken,async (req, res) => {IF
-=======
-app.get('/api/rotation-types', authenticateToken, async (req, res) => {
->>>>>>> Stashed changes
+
+app.get('/api/rotation-types', authenticateToken,async (req, res) => {
     try {
         let types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } });
         if (types.length === 0) { await prisma.rotation_types.createMany({ data: DEFAULT_ROTATION_TYPES }); types = await prisma.rotation_types.findMany({ orderBy: { id: 'asc' } }); }
