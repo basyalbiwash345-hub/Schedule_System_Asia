@@ -123,11 +123,14 @@ const Overview = ({ users = [] }) => {
     const [holidays, setHolidays] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [selectedDate, setSelectedDate] = useState(null);
 
     const today = useMemo(() => zeroTime(new Date()), []);
     const { weekStart, weekEnd } = useMemo(() => getCurrentWeekRange(today), [today]);
     const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
     const todayKey = useMemo(() => toDateKey(today), [today]);
+    const activeDate = useMemo(() => selectedDate || today, [selectedDate, today]);
+    const activeDateKey = useMemo(() => toDateKey(activeDate), [activeDate]);
 
     const getUserName = useMemo(() => {
         return (userId) => {
@@ -288,9 +291,9 @@ const Overview = ({ users = [] }) => {
         return grouped;
     }, [mergedEvents, weekDays]);
 
-    const todayEvents = useMemo(() => eventsByDay[toDateKey(today)] || [], [eventsByDay, today]);
+    const todayEvents = useMemo(() => eventsByDay[activeDateKey] || [], [eventsByDay, activeDateKey]);
 
-    const todayScheduleEmployees = useMemo(() => {
+    const selectedDateScheduleEmployees = useMemo(() => {
         const scheduleUsers = todayEvents
             .filter((event) => event.category === 'Schedule' && event.userId != null && WORKING_CODES.has(event.status))
             .map((event) => getUserName(event.userId));
@@ -374,15 +377,18 @@ const Overview = ({ users = [] }) => {
                             const key = toDateKey(day);
                             const dayEvents = eventsByDay[key] || [];
                             const isToday = key === todayKey;
+                            const isSelected = key === activeDateKey;
                             const holiday = holidayEvents.find((item) => item.startDate && toDateKey(item.startDate) === key);
                             return (
-                                <div key={key} style={{
-                                    background: '#ffffff',
+                                <div key={key} onClick={() => setSelectedDate(day)} style={{
+                                    background: isSelected ? '#fff5f5' : '#ffffff',
                                     borderRadius: '14px',
-                                    border: isToday ? '2px solid #e31937' : '1px solid #e5e7eb',
+                                    border: isSelected ? '2px solid #e31937' : isToday ? '2px solid #d1d5db' : '1px solid #e5e7eb',
                                     padding: '1rem',
                                     minHeight: '140px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                                    boxShadow: isSelected ? '0 4px 6px rgba(227, 25, 55, 0.15)' : '0 1px 3px rgba(0,0,0,0.06)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease'
                                 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                                         <div>
@@ -409,16 +415,16 @@ const Overview = ({ users = [] }) => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '1.5rem' }}>
                     <section className="enterprise-card" style={{ padding: '1.25rem' }}>
-                        <h3 style={sectionHeadingStyle}>Today's Schedule</h3>
+                        <h3 style={sectionHeadingStyle}>{activeDateKey === todayKey ? "Today's Schedule" : `Schedule for ${formatShortDate(activeDate)}`}</h3>
                         {todayEvents.length === 0 ? (
-                            <div style={{ color: '#6b7280' }}>No events scheduled for today.</div>
+                            <div style={{ color: '#6b7280' }}>No events scheduled for {activeDateKey === todayKey ? 'today' : 'this date'}.</div>
                         ) : (
                             <>
-                                {todayScheduleEmployees.length > 0 && (
+                                {selectedDateScheduleEmployees.length > 0 && (
                                     <div style={{ marginBottom: '1rem' }}>
-                                        <div style={{ color: '#4b5563', fontSize: '0.95rem', marginBottom: '0.5rem' }}>Employees working today:</div>
+                                        <div style={{ color: '#4b5563', fontSize: '0.95rem', marginBottom: '0.5rem' }}>Employees on shift:</div>
                                         <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#374151' }}>
-                                            {todayScheduleEmployees.map((name) => (
+                                            {selectedDateScheduleEmployees.map((name) => (
                                                 <li key={name} style={{ marginBottom: '0.25rem' }}>{name}</li>
                                             ))}
                                         </ul>
