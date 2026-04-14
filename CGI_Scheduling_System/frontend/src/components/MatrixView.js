@@ -121,13 +121,35 @@ const navBtnSt = { background:'#f3f4f6', border:'1px solid #e5e7eb', borderRadiu
 function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) {
     const [tab,       setTab]       = useState('quick');
     const [code,      setCode]      = useState(entry?.code?.toUpperCase()||'');
+    const [code2,     setCode2]     = useState(entry?.code2?.toUpperCase()||'');
     const [title,     setTitle]     = useState(entry?.title||'');
     const [status,    setStatus]    = useState(entry?.status||'confirmed');
     const [notes,     setNotes]     = useState(entry?.notes||'');
     const [startDate, setStartDate] = useState(entry?.startDate||date||'');
     const [endDate,   setEndDate]   = useState(entry?.endDate||date||'');
 
-    const cfg = code ? CODE_COLORS[code] : null;
+    const cfg  = code  ? CODE_COLORS[code]  : null;
+    const cfg2 = code2 ? CODE_COLORS[code2] : null;
+
+    // Cell preview showing split layout when both codes selected
+    const CellPreview = () => (
+        <div style={{ display:'flex', flexDirection:'column', gap:3, marginBottom:'1rem' }}>
+            {cfg && (
+                <div style={{ background:cfg.bg, border:`1px solid ${cfg.color}33`, borderRadius: cfg2 ? '6px 6px 0 0' : 8, padding:'0.5rem 1rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                    <span style={{ fontWeight:800, fontSize:'1rem', color:cfg.color }}>{code}</span>
+                    <span style={{ color:cfg.color, fontSize:'0.85rem' }}>{cfg.label}</span>
+                    <span style={{ marginLeft:'auto', fontSize:'0.65rem', color:cfg.color, opacity:0.7 }}>Top</span>
+                </div>
+            )}
+            {cfg2 && (
+                <div style={{ background:cfg2.bg, border:`1px solid ${cfg2.color}33`, borderRadius: cfg ? '0 0 6px 6px' : 8, padding:'0.5rem 1rem', display:'flex', alignItems:'center', gap:'0.75rem', marginTop: cfg ? -3 : 0 }}>
+                    <span style={{ fontWeight:800, fontSize:'1rem', color:cfg2.color }}>{code2}</span>
+                    <span style={{ color:cfg2.color, fontSize:'0.85rem' }}>{cfg2.label}</span>
+                    <span style={{ marginLeft:'auto', fontSize:'0.65rem', color:cfg2.color, opacity:0.7 }}>Bottom</span>
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div
@@ -167,8 +189,9 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
                 <div style={{ padding:'1.25rem', overflowY:'auto', maxHeight:'55vh' }}>
                     {tab === 'quick' ? (
                         <>
-                            <label style={labelSt}>Select Code <span style={{ color:'#e31937' }}>*</span></label>
-                            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', marginBottom:'1rem' }}>
+                            {/* Primary code */}
+                            <label style={labelSt}>Primary Code <span style={{ color:'#e31937' }}>*</span></label>
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', marginBottom:'0.75rem' }}>
                                 {Object.entries(CODE_COLORS).map(([c, cf]) => {
                                     const active = code === c;
                                     return (
@@ -184,12 +207,40 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
                                     );
                                 })}
                             </div>
-                            {cfg && (
-                                <div style={{ background:cfg.bg, border:`1px solid ${cfg.color}33`, borderRadius:8, padding:'0.65rem 1rem', marginBottom:'1rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
-                                    <span style={{ fontWeight:800, fontSize:'1rem', color:cfg.color }}>{code}</span>
-                                    <span style={{ color:cfg.color, fontSize:'0.85rem' }}>{cfg.label}</span>
-                                </div>
-                            )}
+
+                            {/* Secondary code */}
+                            <label style={{ ...labelSt, display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                                Secondary Code
+                                <span style={{ fontSize:'0.68rem', fontWeight:500, color:'#9ca3af' }}>(optional — splits the cell)</span>
+                            </label>
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', marginBottom:'1rem' }}>
+                                <button onClick={() => setCode2('')} style={{
+                                    padding:'0.3rem 0.75rem', borderRadius:20, fontSize:'0.75rem',
+                                    border:`2px solid ${code2===''?'#374151':'#e5e7eb'}`,
+                                    background:code2===''?'#f3f4f6':'#fff',
+                                    color:code2===''?'#374151':'#9ca3af',
+                                    fontWeight:code2===''?700:500, cursor:'pointer',
+                                }}>
+                                    {code2===''?'✓ ':''}None
+                                </button>
+                                {Object.entries(CODE_COLORS).filter(([c]) => c!=='CLEAR').map(([c, cf]) => {
+                                    const active = code2 === c;
+                                    return (
+                                        <button key={c} onClick={() => setCode2(active?'':c)} style={{
+                                            padding:'0.3rem 0.75rem', borderRadius:20, fontSize:'0.75rem',
+                                            border:`2px solid ${active?cf.color:'#e5e7eb'}`,
+                                            background:active?cf.bg:'#fff',
+                                            color:active?cf.color:'#6b7280',
+                                            fontWeight:active?800:500, cursor:'pointer',
+                                        }}>
+                                            {active?'✓ ':''}{c}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {(cfg || cfg2) && <CellPreview />}
+
                             <label style={labelSt}>Date Range</label>
                             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
                                 <div><div style={{ fontSize:'0.7rem', color:'#9ca3af', marginBottom:4 }}>Start</div><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputSt} /></div>
@@ -200,7 +251,7 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
                         <div style={{ display:'flex', flexDirection:'column', gap:'0.85rem' }}>
                             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
                                 <div>
-                                    <label style={labelSt}>Code <span style={{ color:'#e31937' }}>*</span></label>
+                                    <label style={labelSt}>Primary Code <span style={{ color:'#e31937' }}>*</span></label>
                                     <select value={code} onChange={e => setCode(e.target.value)} style={inputSt}>
                                         <option value="">Select code…</option>
                                         {Object.entries(CODE_COLORS).filter(([c]) => c!=='CLEAR').map(([c,cf]) => (
@@ -209,11 +260,21 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={labelSt}>Status</label>
-                                    <select value={status} onChange={e => setStatus(e.target.value)} style={inputSt}>
-                                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+                                    <label style={labelSt}>Secondary Code</label>
+                                    <select value={code2} onChange={e => setCode2(e.target.value)} style={inputSt}>
+                                        <option value="">None</option>
+                                        {Object.entries(CODE_COLORS).filter(([c]) => c!=='CLEAR').map(([c,cf]) => (
+                                            <option key={c} value={c}>{c} — {cf.label}</option>
+                                        ))}
                                     </select>
                                 </div>
+                            </div>
+                            {(cfg || cfg2) && <CellPreview />}
+                            <div>
+                                <label style={labelSt}>Status</label>
+                                <select value={status} onChange={e => setStatus(e.target.value)} style={inputSt}>
+                                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+                                </select>
                             </div>
                             <div>
                                 <label style={labelSt}>Title / Description</label>
@@ -239,7 +300,7 @@ function EventModal({ entry, empId, date, empName, onSave, onDelete, onClose }) 
                 {/* Footer */}
                 <div style={{ padding:'1rem 1.25rem', borderTop:'1px solid #f3f4f6', display:'flex', gap:'0.6rem' }}>
                     <button
-                        onClick={() => code && onSave({ code, title, status, notes, startDate, endDate })}
+                        onClick={() => code && onSave({ code, code2: code2||null, title, status, notes, startDate, endDate })}
                         disabled={!code}
                         style={{ flex:1, padding:'0.65rem', borderRadius:7, border:'none', background:code?'#e31937':'#e5e7eb', color:code?'#fff':'#9ca3af', fontWeight:700, fontSize:'0.875rem', cursor:code?'pointer':'default', transition:'all 0.15s' }}
                     >
@@ -367,19 +428,47 @@ const CanvasGrid = React.memo(({
 
                 const entry=schedule[`${row.emp.id}_${date}`];
                 const code=entry?.code?.toUpperCase();
+                const code2=entry?.code2?.toUpperCase();
                 const cfg=code?CODE_COLORS[code]:null;
+                const cfg2=code2?CODE_COLORS[code2]:null;
                 if (!cfg||code==='CLEAR') continue;
 
-                const dim=highlightCode&&code!==highlightCode;
-                ctx.fillStyle=dim?cfg.bg+'44':cfg.bg;
-                ctx.beginPath();
-                if (ctx.roundRect) ctx.roundRect(x+2,ry+2,CELL_W-4,CELL_H-4,3);
-                else ctx.rect(x+2,ry+2,CELL_W-4,CELL_H-4);
-                ctx.fill();
-                ctx.font='800 9px sans-serif';
-                ctx.fillStyle=dim?cfg.color+'44':cfg.color;
-                ctx.textAlign='center'; ctx.textBaseline='middle';
-                ctx.fillText(code, x+CELL_W/2, ry+CELL_H/2);
+                if (cfg2 && code2 !== 'CLEAR') {
+                    // Split cell: top half = code, bottom half = code2
+                    const halfH = Math.floor((CELL_H - 4) / 2);
+                    const dim1=highlightCode&&code!==highlightCode;
+                    ctx.fillStyle=dim1?cfg.bg+'44':cfg.bg;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(x+2,ry+2,CELL_W-4,halfH,[3,3,0,0]);
+                    else ctx.rect(x+2,ry+2,CELL_W-4,halfH);
+                    ctx.fill();
+                    ctx.font='800 7px sans-serif';
+                    ctx.fillStyle=dim1?cfg.color+'44':cfg.color;
+                    ctx.textAlign='center'; ctx.textBaseline='middle';
+                    ctx.fillText(code,x+CELL_W/2,ry+2+halfH/2);
+
+                    const dim2=highlightCode&&code2!==highlightCode;
+                    ctx.fillStyle=dim2?cfg2.bg+'44':cfg2.bg;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(x+2,ry+2+halfH,CELL_W-4,halfH,[0,0,3,3]);
+                    else ctx.rect(x+2,ry+2+halfH,CELL_W-4,halfH);
+                    ctx.fill();
+                    ctx.font='800 7px sans-serif';
+                    ctx.fillStyle=dim2?cfg2.color+'44':cfg2.color;
+                    ctx.textAlign='center'; ctx.textBaseline='middle';
+                    ctx.fillText(code2,x+CELL_W/2,ry+2+halfH+halfH/2);
+                } else {
+                    const dim=highlightCode&&code!==highlightCode;
+                    ctx.fillStyle=dim?cfg.bg+'44':cfg.bg;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(x+2,ry+2,CELL_W-4,CELL_H-4,3);
+                    else ctx.rect(x+2,ry+2,CELL_W-4,CELL_H-4);
+                    ctx.fill();
+                    ctx.font='800 9px sans-serif';
+                    ctx.fillStyle=dim?cfg.color+'44':cfg.color;
+                    ctx.textAlign='center'; ctx.textBaseline='middle';
+                    ctx.fillText(code, x+CELL_W/2, ry+CELL_H/2);
+                }
 
                 // Conflict indicator — red corner triangle
                 const cellKey = `${row.emp.id}_${date}`;
@@ -655,7 +744,9 @@ const CanvasGrid = React.memo(({
         if (hit) {
             const entry = schedule[hit.key];
             const code  = entry?.code?.toUpperCase();
+            const code2 = entry?.code2?.toUpperCase();
             const cfg   = code ? CODE_COLORS[code] : null;
+            const cfg2  = code2 ? CODE_COLORS[code2] : null;
             const rect  = wrapperRef.current?.getBoundingClientRect();
 
             // Find the rotation whose date range covers this cell and matches the code.
@@ -696,6 +787,10 @@ const CanvasGrid = React.memo(({
                 label: cfg?.label || null,
                 bg: cfg?.bg || null,
                 color: cfg?.color || null,
+                code2: code2 || null,
+                label2: cfg2?.label || null,
+                bg2: cfg2?.bg || null,
+                color2: cfg2?.color || null,
                 rotationName: matchedRotation?.name || null,
             });
         } else {
@@ -778,13 +873,25 @@ const CanvasGrid = React.memo(({
                         {tooltip.date}
                     </div>
                     {tooltip.code ? (
-                        <div style={{
-                            display:'inline-flex', alignItems:'center', gap:5,
-                            background: tooltip.bg, color: tooltip.color,
-                            borderRadius:4, padding:'2px 7px', fontSize:'0.72rem', fontWeight:800,
-                        }}>
-                            {tooltip.code}
-                            {tooltip.label && <span style={{ fontWeight:500 }}>— {tooltip.label}</span>}
+                        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                            <div style={{
+                                display:'inline-flex', alignItems:'center', gap:5,
+                                background: tooltip.bg, color: tooltip.color,
+                                borderRadius:4, padding:'2px 7px', fontSize:'0.72rem', fontWeight:800,
+                            }}>
+                                {tooltip.code}
+                                {tooltip.label && <span style={{ fontWeight:500 }}>— {tooltip.label}</span>}
+                            </div>
+                            {tooltip.code2 && (
+                                <div style={{
+                                    display:'inline-flex', alignItems:'center', gap:5,
+                                    background: tooltip.bg2, color: tooltip.color2,
+                                    borderRadius:4, padding:'2px 7px', fontSize:'0.72rem', fontWeight:800,
+                                }}>
+                                    {tooltip.code2}
+                                    {tooltip.label2 && <span style={{ fontWeight:500 }}>— {tooltip.label2}</span>}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div style={{ fontSize:'0.72rem', color:'#6b7280', fontStyle:'italic' }}>No entry</div>
@@ -1068,7 +1175,9 @@ export default function MatrixView({ refreshKey = 0 }) {
             fetch(`/api/schedule?month=${m}`).then(r=>r.json()).catch(()=>[])
         )).then(results => {
             const newMap = {};
-            results.flat().forEach(e => { newMap[`${e.user_id}_${e.date}`] = { code:e.code, id:e.id }; });
+            results.flat().forEach(e => {
+                newMap[`${e.user_id}_${e.date}`] = { code:e.code, id:e.id, ...(e.code2 ? { code2:e.code2, id2:e.id2 } : {}) };
+            });
             dispatchSchedule({ type:'MERGE', data:newMap });
             setFetchedMonths(prev => { const n=new Set(prev); toFetch.forEach(k=>n.add(k)); return n; });
         });
@@ -1264,13 +1373,21 @@ export default function MatrixView({ refreshKey = 0 }) {
     const openModal = useCallback((key, empId, date, empName) => setModal({ key, empId, date, empName }), []);
 
     // Modal save
-    const handleModalSave = useCallback(async ({ code, title, status, notes, startDate, endDate }) => {
+    const handleModalSave = useCallback(async ({ code, code2, title, status, notes, startDate, endDate }) => {
         if (!modal) return;
         const { empId, date } = modal;
         const rangeDates = startDate && endDate ? getDateRange(startDate, endDate) : [date];
-        const updates = rangeDates.map(d=>({ key:`${empId}_${d}`, code:code==='CLEAR'?null:code, meta:{ title, status, notes } }));
+        const updates = rangeDates.map(d=>({
+            key:`${empId}_${d}`,
+            code:code==='CLEAR'?null:code,
+            meta:{ title, status, notes, ...(code2 ? { code2 } : {}) }
+        }));
         dispatchSchedule({ type:'SET_CELLS', updates });
-        await Promise.all(rangeDates.map(d=>fetch('/api/schedule',{ method:'PUT', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ user_id:empId, date:d, code }) }).catch(()=>{})));
+        await Promise.all(rangeDates.map(d=>fetch('/api/schedule',{
+            method:'PUT',
+            headers:{ 'Content-Type':'application/json' },
+            body:JSON.stringify({ user_id:empId, date:d, code, ...(code2 ? { code2 } : {}) })
+        }).catch(()=>{})));
 
         // Sync to Rotations page: create a rotation covering the saved date range.
         if (code && code !== 'CLEAR') {
@@ -1284,7 +1401,7 @@ export default function MatrixView({ refreshKey = 0 }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    name: `${code} \u2014 ${empName}`,
+                    name: code2 ? `${code}/${code2} \u2014 ${empName}` : `${code} \u2014 ${empName}`,
                     code,
                     team_id: teamId,
                     start_date: actualStart,

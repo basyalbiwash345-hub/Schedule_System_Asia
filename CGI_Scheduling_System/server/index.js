@@ -395,31 +395,73 @@ app.get('/api/schedule', async (req, res) => {
         const lte = new Date(Date.UTC(year, mon - 1, new Date(year, mon, 0).getDate(), 23, 59, 59, 999));
         const entries = await prisma.rotation_assignments.findMany({
             where: { start_time: { gte, lte }, NOT: { status_code: 'CLEAR' } },
-            orderBy: { start_time: 'asc' },
+            orderBy: [{ start_time: 'asc' }, { slot: 'asc' }],
         });
-        res.json(entries.map(e => ({ id: e.id, user_id: e.user_id, date: e.start_time.toISOString().split('T')[0], code: e.status_code })));
+        // Group by user_id + date to support dual-code cells (morning + afternoon slots)
+        const cellMap = {};
+        for (const e of entries) {
+            const date = e.start_time.toISOString().split('T')[0];
+            const key = `${e.user_id}_${date}`;
+            if (!cellMap[key]) cellMap[key] = { user_id: e.user_id, date, rows: [] };
+            cellMap[key].rows.push(e);
+        }
+        const result = Object.values(cellMap).map(({ user_id, date, rows }) => {
+            if (rows.length === 1) {
+                return { id: rows[0].id, user_id, date, code: rows[0].status_code };
+            }
+            // Two rows: morning is primary (code), afternoon is secondary (code2)
+            const morning   = rows.find(r => r.slot === 'morning') || rows[0];
+            const afternoon = rows.find(r => r.slot === 'afternoon') || rows[1];
+            return { id: morning.id, id2: afternoon.id, user_id, date, code: morning.status_code, code2: afternoon.status_code };
+        });
+        res.json(result);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/schedule', async (req, res) => {
-    const { user_id, date, code } = req.body;
+    const { user_id, date, code, code2 } = req.body;
     if (!user_id || !date || !code) return res.status(400).json({ error: 'user_id, date, and code are required.' });
     const dayStart = new Date(date + 'T00:00:00.000Z');
     const dayEnd   = new Date(date + 'T23:59:59.999Z');
     try {
-        const existing = await prisma.rotation_assignments.findFirst({
-            where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } },
-        });
-
-        // CLEAR means "remove the entry" — delete if it exists, otherwise no-op.
+        // CLEAR means "remove all entries for this user/date".
         if (code === 'CLEAR') {
-            if (existing) await prisma.rotation_assignments.delete({ where: { id: existing.id } });
+            await prisma.rotation_assignments.deleteMany({ where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } } });
             return res.json({ user_id: Number(user_id), date, code: null });
         }
 
+        const existingRows = await prisma.rotation_assignments.findMany({
+            where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } },
+        });
+
+        if (code2) {
+            // Dual-code cell: delete existing rows and create morning + afternoon pair
+            if (existingRows.length > 0) {
+                await prisma.rotation_assignments.deleteMany({ where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } } });
+            }
+            const morning = await prisma.rotation_assignments.create({
+                data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code, status: 'scheduled', slot: 'morning' },
+            });
+            const afternoon = await prisma.rotation_assignments.create({
+                data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code2, status: 'scheduled', slot: 'afternoon' },
+            });
+            return res.json({ id: morning.id, id2: afternoon.id, user_id: Number(user_id), date, code, code2 });
+        }
+
+        // Single-code cell
+        if (existingRows.length > 1) {
+            // Was dual — collapse to single full slot
+            await prisma.rotation_assignments.deleteMany({ where: { user_id: Number(user_id), start_time: { gte: dayStart, lte: dayEnd } } });
+            const entry = await prisma.rotation_assignments.create({
+                data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code, status: 'scheduled', slot: 'full' },
+            });
+            return res.json({ id: entry.id, user_id: Number(user_id), date, code });
+        }
+
+        const existing = existingRows[0];
         let entry;
         if (existing) {
-            entry = await prisma.rotation_assignments.update({ where: { id: existing.id }, data: { status_code: code } });
+            entry = await prisma.rotation_assignments.update({ where: { id: existing.id }, data: { status_code: code, slot: 'full' } });
         } else {
             entry = await prisma.rotation_assignments.create({
                 data: { user_id: Number(user_id), start_time: dayStart, end_time: dayEnd, status_code: code, status: 'scheduled', slot: 'full' },
