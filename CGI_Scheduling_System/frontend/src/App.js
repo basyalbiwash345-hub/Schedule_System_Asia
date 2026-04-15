@@ -6,9 +6,13 @@ import MatrixView from './components/MatrixView';
 import './App.css'
 import { Box, Card, CardContent, TextField, Button, Typography, Alert, InputAdornment, IconButton } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
+
+
 import ForcePasswordChange from './components/ForcePasswordChange';
-import Overview from './pages/Overview';
+import Overview from './pages/NewOverview';
+
 import Users from './pages/Users';
+
 import Teams from './pages/Teams';
 import Rotations from './pages/Rotations';
 
@@ -369,9 +373,11 @@ function App() {
                     users={users}
                     isUserAdmin={isUserAdmin}
                     getTeamDisplayMembers={getTeamDisplayMembers}
+                    onNavigate={setActivePage}
                 />
             );
         }
+
 
         return <div className="enterprise-card"><h2>{activePage} Management</h2><p>Development in progress.</p></div>;
     };
